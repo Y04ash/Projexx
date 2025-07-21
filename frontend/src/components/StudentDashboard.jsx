@@ -35,8 +35,11 @@ import TaskSubmission from './TaskManagement/TaskSubmission';
 import StudentTaskViewer from './TaskManagement/StudentTaskViewer';
 import StudentAnalyticsDashboard from './Analytics/StudentAnalyticsDashboard';
 import { API_BASE } from '../App';
+import  { TeamCreator } from "../components/student/TeamCreator"
+import  { JoinServerByCode} from "./student/JoinServerByCode"
 
-const StudentDashboard = () => {
+ 
+const StudentDashboard = ({onLogout}) => {
   const { user } = React.useContext(AuthContext);
   
   // State Management
@@ -54,7 +57,7 @@ const StudentDashboard = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [notifications, setNotifications] = useState([]);
-
+const[serverId,setServerId]=useState(null)
   // Modal States
   const [showJoinServerModal, setShowJoinServerModal] = useState(false);
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
@@ -107,6 +110,7 @@ const StudentDashboard = () => {
         // Auto-select first server if none selected
         if (!selectedServer && data.servers?.length > 0) {
           setSelectedServer(data.servers[0]);
+          setServerId(selectedServer._id)
         }
       }
     } catch (error) {
@@ -302,6 +306,9 @@ const StudentDashboard = () => {
             className="p-2 text-gray-400 hover:text-gray-600 disabled:opacity-50"
           >
             <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={onLogout} className='inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors'>
+            LogOut
           </button>
         </div>
       </div>
@@ -616,6 +623,19 @@ const StudentDashboard = () => {
           <Plus className="w-4 h-4 mr-2" />
           Create Team
         </button>
+        {
+          showCreateTeamModal && <TeamCreator userServers={servers} serverId={serverId} 
+            onTeamCreated={(newTeam) => {
+            fetchTeams();           // Re-fetch updated list of teams
+            console.log('New team:', newTeam);
+          }}
+          onClose={() => {
+            setShowCreateTeamModal(false)
+            // setShowTaskSubmission(false);
+            // setSelectedTask(null);
+          }} />
+        }
+
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -677,6 +697,18 @@ const StudentDashboard = () => {
             <Plus className="w-4 h-4 mr-2" />
             Create Your First Team
           </button>
+          {
+          showCreateTeamModal && <TeamCreator userServers={servers} serverId={serverId} 
+            onTeamCreated={(newTeam) => {
+            fetchTeams();           // Re-fetch updated list of teams
+            console.log('New team:', newTeam);
+          }}
+          onClose={() => {
+            setShowCreateTeamModal(false)
+            // setShowTaskSubmission(false);
+            // setSelectedTask(null);
+          }} />
+        }
         </div>
       )}
     </div>
@@ -697,6 +729,20 @@ const StudentDashboard = () => {
           <Plus className="w-4 h-4 mr-2" />
           Join Server
         </button>
+           {
+            showJoinServerModal && (
+              <JoinServerByCode 
+               onServerJoined={(joinedServer) => {
+              fetchServers();           // Refresh server list
+              console.log('Joined server:', joinedServer);
+            }}
+            onClose={() => {
+            setShowJoinServerModal(false)
+            // setShowTaskSubmission(false);
+            // setSelectedTask(null);
+          }} />
+            )
+          }
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">

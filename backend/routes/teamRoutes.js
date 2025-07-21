@@ -12,6 +12,115 @@ const logWithTimestamp = (level, message, data = {}) => {
 };
 
 // ✅ CREATE TEAM
+// router.post('/createTeam', verifyToken, async (req, res) => {
+//   try {
+//     logWithTimestamp('info', 'Team creation attempt', {
+//       userId: req.user.id,
+//       userRole: req.user.role,
+//       body: req.body
+//     });
+
+//     if (req.user.role !== 'student') {
+//       return res.status(403).json({
+//         success: false,
+//         message: 'Only students can create teams'
+//       });
+//     }
+
+//     const { name, description, projectServer, maxMembers } = req.body;
+
+//     // Validate required fields
+//     if (!name || !projectServer) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'Team name and project server code are required'
+//       });
+//     }
+
+//     // Verify project server exists
+//     const server = await ProjectServer.findOne({ code: projectServer.toUpperCase() });
+//     if (!server) {
+//       return res.status(404).json({
+//         success: false,
+//         message: 'Invalid project server code'
+//       });
+//     }
+
+//     // Check if student is already in a team for this server
+//     // const existingTeam = await StudentTeam.findOne({
+//     //   projectServer: projectServer.toUpperCase(),
+//     //   members: req.user.id
+//     // });
+
+//     // if (existingTeam) {
+//     //   return res.status(400).json({
+//     //     success: false,
+//     //     message: 'You are already in a team for this project server',
+//     //     existingTeam: {
+//     //       name: existingTeam.name,
+//     //       id: existingTeam._id
+//     //     }
+//     //   });
+//     // }
+
+//     // Check if team name already exists for this server
+//     const duplicateTeam = await StudentTeam.findOne({
+//       name: name.trim(),
+//       projectServer: projectServer.toUpperCase()
+//     });
+
+//     if (duplicateTeam) {
+//       return res.status(400).json({
+//         success: false,
+//         message: 'A team with this name already exists for this server'
+//       });
+//     }
+
+//     // Create the team
+//     const newTeam = new StudentTeam({
+//       name: name.trim(),
+//       description: description?.trim() || '',
+//       projectServer: projectServer.toUpperCase(),
+//       creator: req.user.id,
+//       members: [req.user.id],
+//       maxMembers: maxMembers || 4,
+//       status: 'active'
+//     });
+
+//     await newTeam.save();
+
+//     // Populate the team for response
+//     const populatedTeam = await StudentTeam.findById(newTeam._id)
+//       .populate('members', 'firstName lastName email')
+//       .populate('creator', 'firstName lastName email');
+
+//     logWithTimestamp('info', 'Team created successfully', {
+//       teamId: newTeam._id,
+//       teamName: newTeam.name,
+//       creatorId: req.user.id,
+//       serverCode: projectServer.toUpperCase()
+//     });
+
+//     res.status(201).json({
+//       success: true,
+//       message: 'Team created successfully',
+//       team: populatedTeam
+//     });
+
+//   } catch (error) {
+//     logWithTimestamp('error', 'Team creation failed', {
+//       error: error.message,
+//       userId: req.user.id
+//     });
+
+//     res.status(500).json({
+//       success: false,
+//       message: 'Failed to create team',
+//       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+//     });
+//   }
+// });
+// ✅ CREATE TEAM
 router.post('/createTeam', verifyToken, async (req, res) => {
   try {
     logWithTimestamp('info', 'Team creation attempt', {
@@ -27,7 +136,7 @@ router.post('/createTeam', verifyToken, async (req, res) => {
       });
     }
 
-    const { name, description, projectServer, maxMembers } = req.body;
+    const { name, description, projectServer, maxMembers,studentEmails } = req.body;
 
     // Validate required fields
     if (!name || !projectServer) {
@@ -47,21 +156,21 @@ router.post('/createTeam', verifyToken, async (req, res) => {
     }
 
     // Check if student is already in a team for this server
-    const existingTeam = await StudentTeam.findOne({
-      projectServer: projectServer.toUpperCase(),
-      members: req.user.id
-    });
+    // const existingTeam = await StudentTeam.findOne({
+    //   projectServer: projectServer.toUpperCase(),
+    //   members: req.user.id
+    // });
 
-    if (existingTeam) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are already in a team for this project server',
-        existingTeam: {
-          name: existingTeam.name,
-          id: existingTeam._id
-        }
-      });
-    }
+    // if (existingTeam) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'You are already in a team for this project server',
+    //     existingTeam: {
+    //       name: existingTeam.name,
+    //       id: existingTeam._id
+    //     }
+    //   });
+    // }
 
     // Check if team name already exists for this server
     const duplicateTeam = await StudentTeam.findOne({
@@ -76,19 +185,50 @@ router.post('/createTeam', verifyToken, async (req, res) => {
       });
     }
 
+        // 🔍 Fetch students by email addresses
+    const students = await Student.find({ email: { $in: studentEmails } });
+    console.log("students ",students)
+    console.log("studentEmails ",studentEmails)
+    if (students.length !== studentEmails.length) {
+      return res.status(404).json({ message: "Some student emails not found" });
+    }
+
+    const studentIds = students.map(s => s._id);
+    console.log("sstudent ids",studentIds)
     // Create the team
     const newTeam = new StudentTeam({
       name: name.trim(),
       description: description?.trim() || '',
       projectServer: projectServer.toUpperCase(),
       creator: req.user.id,
-      members: [req.user.id],
+      members: studentIds,
       maxMembers: maxMembers || 4,
       status: 'active'
     });
 
     await newTeam.save();
 
+    // ⭐ Update creator and all current members (in creation, only creator)
+     await Student.findByIdAndUpdate(
+      req.user.id,
+      {
+        $addToSet: { 
+          joinedTeams: newTeam._id, 
+          joinedServers: server._id 
+        }
+      },
+      { new: true }
+    );
+
+    await Student.updateMany(
+      { _id: { $in: studentIds} },
+      {
+        $addToSet: {
+          joinedTeams: newTeam._id,
+          joinedServers: server._id
+        }
+      }
+    );
     // Populate the team for response
     const populatedTeam = await StudentTeam.findById(newTeam._id)
       .populate('members', 'firstName lastName email')
@@ -97,6 +237,7 @@ router.post('/createTeam', verifyToken, async (req, res) => {
     logWithTimestamp('info', 'Team created successfully', {
       teamId: newTeam._id,
       teamName: newTeam.name,
+      members:newTeam.members,
       creatorId: req.user.id,
       serverCode: projectServer.toUpperCase()
     });
@@ -120,7 +261,6 @@ router.post('/createTeam', verifyToken, async (req, res) => {
     });
   }
 });
-
 // ✅ GET TEAMS BY SERVER ID (NEW ENDPOINT)
 router.get('/server/:serverId/teams', verifyToken, async (req, res) => {
   try {
@@ -197,7 +337,10 @@ router.get('/student-teams', verifyToken, async (req, res) => {
     });
 
     const teams = await StudentTeam.find({
-      members: req.user.id
+      $or: [
+        { members: req.user.id },
+        { creator: req.user.id }
+      ]
     })
     .populate('members', 'firstName lastName email')
     .populate('creator', 'firstName lastName email')

@@ -239,9 +239,106 @@ router.get("/faculty-servers", verifyToken, async (req, res) => {
   }
 });
 // ✅ Get student's project servers (based on team membership)
+// router.get("/student-servers", verifyToken, async (req, res) => {
+//   try {
+//     logWithTimestamp('info', 'Student requesting their servers', {
+//       studentId: req.user.id
+//     });
+
+//     if (req.user.role !== "student") {
+//       return res.status(403).json({ 
+//         message: "Only students can access this endpoint",
+//         success: false 
+//       });
+//     }
+
+//     // Get teams the student is part of
+//     const studentTeams = await StudentTeam.find({ 
+//       members: req.user.id 
+//     }).populate('members', 'firstName lastName email')
+//       .populate('creator', 'firstName lastName email');
+
+//     logWithTimestamp('info', 'Student teams found', {
+//       studentId: req.user.id,
+//       teamCount: studentTeams.length
+//     });
+
+//     if (studentTeams.length === 0) {
+//       return res.status(200).json({
+//         success: true,
+//         servers: [],
+//         message: "No project servers found. Create or join a team to access servers.",
+//         info: "Servers are accessed through team membership"
+//       });
+//     }
+
+//     // Get unique server codes from teams
+//     const serverCodes = [...new Set(studentTeams.map(team => team.projectServer))];
+//     logWithTimestamp('debug', 'Server codes from teams', { serverCodes });
+    
+//     // Get server details
+//     const projectServers = await ProjectServer.find({ 
+//       code: { $in: serverCodes } 
+//     })
+//     .populate('faculty', 'firstName lastName email')
+//     .sort({ createdAt: -1 });
+
+//     logWithTimestamp('info', 'Project servers found for student', {
+//       studentId: req.user.id,
+//       serverCount: projectServers.length
+//     });
+
+//     // Add complete team information to each server
+//     const serversWithTeams = projectServers.map(server => {
+//       const serverObj = server.toObject();
+      
+//       // Get teams for this specific server
+//       const serverTeams = studentTeams.filter(team => team.projectServer === server.code);
+      
+//       serverObj.studentTeams = serverTeams.map(team => ({
+//         id: team._id,
+//         _id: team._id,
+//         name: team.name,
+//         members: team.members,
+//         creator: team.creator,
+//         createdAt: team.createdAt,
+//         description: team.description || ''
+//       }));
+      
+//       return serverObj;
+//     });
+
+//     logWithTimestamp('info', 'Student servers response ready', {
+//       studentId: req.user.id,
+//       serverCount: projectServers.length,
+//       teamCount: studentTeams.length
+//     });
+
+//     res.status(200).json({
+//       success: true,
+//       servers: serversWithTeams,
+//       teamsCount: studentTeams.length,
+//       message: projectServers.length === 0 ? "No project servers found" : `Found ${projectServers.length} project servers via ${studentTeams.length} teams`
+//     });
+
+//   } catch (err) {
+//     logWithTimestamp('error', 'Error fetching student servers', {
+//       error: err.message,
+//       userId: req.user?.id
+//     });
+
+//     res.status(500).json({ 
+//       message: "Failed to fetch project servers", 
+//       error: process.env.NODE_ENV === 'production' ? "Internal server error" : err.message,
+//       success: false 
+//     });
+//   }
+// });
+
+// ✅ Get student's project servers (based on joinedServers)
 router.get("/student-servers", verifyToken, async (req, res) => {
   try {
-    logWithTimestamp('info', 'Student requesting their servers', {
+    logWithTimestamp('info', 'Student requesting their servers via joinedServers', {
       studentId: req.user.id
     });
 
@@ -252,77 +349,57 @@ router.get("/student-servers", verifyToken, async (req, res) => {
       });
     }
 
-    // Get teams the student is part of
-    const studentTeams = await StudentTeam.find({ 
-      members: req.user.id 
-    }).populate('members', 'firstName lastName email')
-      .populate('creator', 'firstName lastName email');
+    // Fetch student document
+    const student = await Student.findById(req.user.id);
 
-    logWithTimestamp('info', 'Student teams found', {
-      studentId: req.user.id,
-      teamCount: studentTeams.length
-    });
-
-    if (studentTeams.length === 0) {
+    if (!student || student.joinedServers.length === 0) {
       return res.status(200).json({
         success: true,
         servers: [],
-        message: "No project servers found. Create or join a team to access servers.",
-        info: "Servers are accessed through team membership"
+        message: "You have not joined any project servers yet."
       });
     }
 
-    // Get unique server codes from teams
-    const serverCodes = [...new Set(studentTeams.map(team => team.projectServer))];
-    logWithTimestamp('debug', 'Server codes from teams', { serverCodes });
-    
-    // Get server details
+    // Fetch servers using joinedServers array
     const projectServers = await ProjectServer.find({ 
-      code: { $in: serverCodes } 
+      _id: { $in: student.joinedServers }
     })
     .populate('faculty', 'firstName lastName email')
     .sort({ createdAt: -1 });
 
-    logWithTimestamp('info', 'Project servers found for student', {
-      studentId: req.user.id,
-      serverCount: projectServers.length
-    });
+    // Fetch teams under each server (optional enhancement)
+    const studentTeams = await StudentTeam.find({
+      projectServer: { $in: projectServers.map(server => server.code) },
+      members: req.user.id
+    })
+    .populate('members', 'firstName lastName email')
+    .populate('creator', 'firstName lastName email');
 
-    // Add complete team information to each server
     const serversWithTeams = projectServers.map(server => {
       const serverObj = server.toObject();
-      
-      // Get teams for this specific server
-      const serverTeams = studentTeams.filter(team => team.projectServer === server.code);
-      
-      serverObj.studentTeams = serverTeams.map(team => ({
+      const relatedTeams = studentTeams.filter(team => team.projectServer === server.code);
+
+      serverObj.studentTeams = relatedTeams.map(team => ({
         id: team._id,
-        _id: team._id,
         name: team.name,
         members: team.members,
         creator: team.creator,
         createdAt: team.createdAt,
         description: team.description || ''
       }));
-      
-      return serverObj;
-    });
 
-    logWithTimestamp('info', 'Student servers response ready', {
-      studentId: req.user.id,
-      serverCount: projectServers.length,
-      teamCount: studentTeams.length
+      return serverObj;
     });
 
     res.status(200).json({
       success: true,
       servers: serversWithTeams,
       teamsCount: studentTeams.length,
-      message: projectServers.length === 0 ? "No project servers found" : `Found ${projectServers.length} project servers via ${studentTeams.length} teams`
+      message: `Found ${projectServers.length} project servers via joinedServers`
     });
 
   } catch (err) {
-    logWithTimestamp('error', 'Error fetching student servers', {
+    logWithTimestamp('error', 'Error fetching student servers via joinedServers', {
       error: err.message,
       userId: req.user?.id
     });
@@ -334,6 +411,7 @@ router.get("/student-servers", verifyToken, async (req, res) => {
     });
   }
 });
+
 
 // ✅ Join project server (Optional - for students)
 router.post("/join", verifyToken, async (req, res) => {

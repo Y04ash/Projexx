@@ -993,9 +993,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
                 <span>Submitting...</span>
               </>
             ) : (
-              <>
+              < >
                 <Send className="w-4 h-4" />
-                <span>Submit Assignment</span>
+                <span onClick={onSubmitted}>Submit Assignment</span>
               </>
             )}
           </button>

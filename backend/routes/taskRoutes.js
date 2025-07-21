@@ -172,7 +172,10 @@ router.get('/student-tasks', verifyToken, async (req, res) => {
 
     // ✅ CRITICAL FIX: NO .populate('projectServer') anywhere
     const studentTeams = await StudentTeam.find({
-      members: req.user.id
+      $or: [
+        { creator: req.user.id },
+        { members: req.user.id }
+      ],
     });
     // ❌ REMOVED: .populate('projectServer') - this was causing the error
 
@@ -666,6 +669,7 @@ router.post('/create', verifyToken, async (req, res) => {
     }
 
     // Verify server ownership
+    console.log("server from task ",serverId)
     const server = await ProjectServer.findById(serverId);
     if (!server) {
       return res.status(404).json({

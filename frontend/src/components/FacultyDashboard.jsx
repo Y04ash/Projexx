@@ -1906,7 +1906,9 @@ const ServersTab = () => (
           serverId={selectedServer._id}
           serverTitle={selectedServer.title}
           onTaskCreated={handleTaskCreated}
-          onClose={() => setShowTaskCreator(false)}
+          onClose={() =>{
+                  setShowTaskCreator(false)
+          } }
         />
       )}
     </div>

@@ -40,7 +40,7 @@ socketIo = safeRequire("socket.io");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-
+const base_api = `http://localhost:/${PORT}`
 // ==============================================
 // TRUST PROXY & SECURITY SETUP
 // ==============================================
@@ -184,91 +184,92 @@ app.options('*', cors(corsOptions));
 // RATE LIMITING - PRODUCTION SAFE
 // ==============================================
 
-if (rateLimit) {
-  // General API rate limiter
-  const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: (req) => {
-      // Higher limits for authenticated users
-      if (req.headers.authorization) return 2000;
-      return 1000;
-    },
-    message: {
-      success: false,
-      error: 'Too many requests from this IP, please try again later.',
-      retryAfter: '15 minutes'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req) => {
-      // Skip rate limiting for health checks and static files
-      return req.originalUrl === '/api/health' || 
-             req.originalUrl === '/' ||
-             req.originalUrl.startsWith('/uploads') ||
-             req.originalUrl.startsWith('/static');
-    },
-    handler: (req, res) => {
-      console.warn(`🚫 [RATE_LIMIT] IP ${req.ip} exceeded general rate limit on ${req.originalUrl}`);
-      res.status(429).json({
-        success: false,
-        error: 'Too many requests, please try again later.',
-        retryAfter: '15 minutes'
-      });
-    }
-  });
+//UNCOMMENT DURING DEPLYOMNET
+// if (rateLimit) {
+//   // General API rate limiter
+//   const generalLimiter = rateLimit({
+//     windowMs: 15 * 60 * 1000, // 15 minutes
+//     max: (req) => {
+//       // Higher limits for authenticated users
+//       if (req.headers.authorization) return 2000;
+//       return 1000;
+//     },
+//     message: {
+//       success: false,
+//       error: 'Too many requests from this IP, please try again later.',
+//       retryAfter: '15 minutes'
+//     },
+//     standardHeaders: true,
+//     legacyHeaders: false,
+//     skip: (req) => {
+//       // Skip rate limiting for health checks and static files
+//       return req.originalUrl === '/api/health' || 
+//              req.originalUrl === '/' ||
+//              req.originalUrl.startsWith('/uploads') ||
+//              req.originalUrl.startsWith('/static');
+//     },
+//     handler: (req, res) => {
+//       console.warn(`🚫 [RATE_LIMIT] IP ${req.ip} exceeded general rate limit on ${req.originalUrl}`);
+//       res.status(429).json({
+//         success: false,
+//         error: 'Too many requests, please try again later.',
+//         retryAfter: '15 minutes'
+//       });
+//     }
+//   });
 
-  // Auth-specific rate limiter (stricter)
-  const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10, // 10 login attempts per 15 minutes
-    message: {
-      success: false,
-      error: 'Too many authentication attempts, please try again later.',
-      retryAfter: '15 minutes'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-      console.warn(`🚫 [AUTH_LIMIT] IP ${req.ip} exceeded auth rate limit on ${req.originalUrl}`);
-      res.status(429).json({
-        success: false,
-        error: 'Too many authentication attempts, please try again later.',
-        retryAfter: '15 minutes'
-      });
-    }
-  });
+//   // Auth-specific rate limiter (stricter)
+  // const authLimiter = rateLimit({
+  //   windowMs: 15 * 60 * 1000, // 15 minutes
+  //   max: 10, // 10 login attempts per 15 minutes
+  //   message: {
+  //     success: false,
+  //     error: 'Too many authentication attempts, please try again later.',
+  //     retryAfter: '15 minutes'
+  //   },
+  //   standardHeaders: true,
+  //   legacyHeaders: false,
+  //   handler: (req, res) => {
+  //     console.warn(`🚫 [AUTH_LIMIT] IP ${req.ip} exceeded auth rate limit on ${req.originalUrl}`);
+  //     res.status(429).json({
+  //       success: false,
+  //       error: 'Too many authentication attempts, please try again later.',
+  //       retryAfter: '15 minutes'
+  //     });
+  //   }
+  // });
 
-  // File upload rate limiter
-  const uploadLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 50, // 50 uploads per 15 minutes
-    message: {
-      success: false,
-      error: 'Too many upload requests, please try again later.',
-      retryAfter: '15 minutes'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    handler: (req, res) => {
-      console.warn(`🚫 [UPLOAD_LIMIT] IP ${req.ip} exceeded upload rate limit on ${req.originalUrl}`);
-      res.status(429).json({
-        success: false,
-        error: 'Too many upload requests, please try again later.',
-        retryAfter: '15 minutes'
-      });
-    }
-  });
+//   // File upload rate limiter
+  // const uploadLimiter = rateLimit({
+  //   windowMs: 15 * 60 * 1000, // 15 minutes
+  //   max: 50, // 50 uploads per 15 minutes
+  //   message: {
+  //     success: false,
+  //     error: 'Too many upload requests, please try again later.',
+  //     retryAfter: '15 minutes'
+  //   },
+  //   standardHeaders: true,
+  //   legacyHeaders: false,
+  //   handler: (req, res) => {
+  //     console.warn(`🚫 [UPLOAD_LIMIT] IP ${req.ip} exceeded upload rate limit on ${req.originalUrl}`);
+  //     res.status(429).json({
+  //       success: false,
+  //       error: 'Too many upload requests, please try again later.',
+  //       retryAfter: '15 minutes'
+  //     });
+  //   }
+  // });
 
   // Apply rate limiters
-  app.use('/api/', generalLimiter);
-  app.use('/api/faculty/login', authLimiter);
-  app.use('/api/faculty/register', authLimiter);
-  app.use('/api/student/login', authLimiter);
-  app.use('/api/student/register', authLimiter);
-  app.use('/api/files/', uploadLimiter);
+  // app.use('/api/', generalLimiter);
+  // app.use('/api/faculty/login', authLimiter);
+  // app.use('/api/faculty/register', authLimiter);
+  // app.use('/api/student/login', authLimiter);
+  // app.use('/api/student/register', authLimiter);
+  // app.use('/api/files/', uploadLimiter);
   
-  console.log('✅ Rate limiting enabled');
-}
+//   console.log('✅ Rate limiting enabled');
+// }
 
 // ==============================================
 // BODY PARSING MIDDLEWARE - COMPREHENSIVE
@@ -371,6 +372,7 @@ app.use('/static', express.static(path.join(__dirname, 'public'), {
   etag: true
 }));
 
+
 // ==============================================
 // MONGODB CONNECTION - BULLETPROOF
 // ==============================================
@@ -384,16 +386,18 @@ console.log('🔌 Connecting to MongoDB...');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-      family: 4,
-      bufferCommands: false,
-      bufferMaxEntries: 0
-    });
+    const conn = await mongoose.connect(MONGO_URI
+    //   , {
+    //   useNewUrlParser: true,
+    //   useUnifiedTopology: true,
+    //   maxPoolSize: 10,
+    //   serverSelectionTimeoutMS: 10000,
+    //   socketTimeoutMS: 45000,
+    //   family: 4,
+    //   bufferCommands: false,
+    //   bufferMaxEntries: 0
+    // }
+  );
 
     console.log("✅ Connected to MongoDB successfully");
     console.log(`📊 Database: ${conn.connection.db.databaseName}`);
@@ -643,12 +647,22 @@ console.log('\n🔗 [ROUTES] Starting route loading process...');
 // Core authentication routes (REQUIRED)
 const authLoaded = safeLoadRoute('./routes/facultyRoutes', 'Faculty Auth', '/api/faculty', true);
 const studentLoaded = safeLoadRoute('./routes/studentRoutes', 'Student Auth', '/api/student', true);
+// alternate faculty route mounting
+if(!authLoaded){
+    try {
+    const authLoaded = require('./routes/facultyRoutes');
+    app.use('/api/faculty', authLoaded);
+    console.log('✅ [ROUTES] Faculty routes also mounted at /api/faculty');
+  } catch (err) {
+    console.warn('⚠️  [ROUTES] Failed to mount alternative Faculty route');
+  }
+}
 
 // Alternative student route mounting
-if (studentLoaded) {
+if (!studentLoaded) {
   try {
     const studentRoutes = require('./routes/studentRoutes');
-    app.use('/api/students', studentRoutes);
+    app.use('/api/student', studentRoutes);
     console.log('✅ [ROUTES] Student routes also mounted at /api/students');
   } catch (err) {
     console.warn('⚠️  [ROUTES] Failed to mount alternative student route');
@@ -660,7 +674,7 @@ const serverLoaded = safeLoadRoute('./routes/projectServerRoutes', 'Project Serv
 const teamLoaded = safeLoadRoute('./routes/teamRoutes', 'Teams', '/api/teams', true);
 
 // Alternative mounting for project servers
-if (serverLoaded) {
+if (!serverLoaded) {
   try {
     const serverRoutes = require('./routes/projectServerRoutes');
     app.use('/api/projectServers', serverRoutes);
@@ -671,7 +685,7 @@ if (serverLoaded) {
 }
 
 // Alternative mounting for teams
-if (teamLoaded) {
+if (!teamLoaded) {
   try {
     const teamRoutes = require('./routes/teamRoutes');
     app.use('/api/teamRoutes', teamRoutes);
@@ -683,7 +697,16 @@ if (teamLoaded) {
 
 // Task management routes (CRITICAL)
 const taskLoaded = safeLoadRoute('./routes/taskRoutes', 'Tasks', '/api/tasks', true);
+if(!taskLoaded) {
+  try {
+    const taskLoaded = require('./routes/taskRoutes');
+    app.use('/api/tasks', taskLoaded);
+    console.log('✅ [ROUTES] tasks routes also mounted at /api/tasks');
+  } catch (err) {
+    console.warn('⚠️  [ROUTES] Failed to mount alternative tasks route');
+  }
 
+}
 // File management routes (IMPORTANT)
 const fileLoaded = safeLoadRoute('./routes/fileRoutes', 'File Upload', '/api/files', false);
 const driveLoaded = safeLoadRoute('./routes/googleDriveRoutes', 'Google Drive', '/api/drive', false);
@@ -703,36 +726,36 @@ safeLoadRoute('./routes/settingsRoutes', 'Settings', '/api/settings', false);
 // ==============================================
 
 // If tasks failed to load, create emergency endpoints
-if (!taskLoaded) {
-  console.log('🚨 [ROUTES] Creating emergency task endpoints...');
+// if (!taskLoaded) {
+//   console.log('🚨 [ROUTES] Creating emergency task endpoints...');
   
-  app.get('/api/tasks/health', (req, res) => {
-    res.status(503).json({
-      success: false,
-      message: 'Task routes failed to load',
-      error: 'taskRoutes.js has compilation errors',
-      suggestion: 'Check for syntax errors, duplicate imports, or missing dependencies'
-    });
-  });
+//   app.get('/api/tasks/health', (req, res) => {
+//     res.status(503).json({
+//       success: false,
+//       message: 'Task routes failed to load',
+//       error: 'taskRoutes.js has compilation errors',
+//       suggestion: 'Check for syntax errors, duplicate imports, or missing dependencies'
+//     });
+//   });
   
-  app.get('/api/tasks/student-tasks', (req, res) => {
-    res.status(503).json({
-      success: false,
-      message: 'Task service unavailable',
-      error: 'Task routes failed to initialize',
-      fallback: true
-    });
-  });
+//   app.get('/api/tasks/student-tasks', (req, res) => {
+//     res.status(503).json({
+//       success: false,
+//       message: 'Task service unavailable',
+//       error: 'Task routes failed to initialize',
+//       fallback: true
+//     });
+//   });
   
-  app.get('/api/tasks/*', (req, res) => {
-    res.status(503).json({
-      success: false,
-      message: 'Task service unavailable',
-      route: req.originalUrl,
-      error: 'Task routes failed to load'
-    });
-  });
-}
+//   app.get('/api/tasks/*', (req, res) => {
+//     res.status(503).json({
+//       success: false,
+//       message: 'Task service unavailable',
+//       route: req.originalUrl,
+//       error: 'Task routes failed to load'
+//     });
+//   });
+// }
 
 // If file routes failed, create emergency endpoints
 if (!fileLoaded) {
@@ -819,6 +842,17 @@ app.get('/', (req, res) => {
   
   res.json(documentation);
 });
+
+
+// ✅ CORE ROUTE IMPORTS
+// const FacultyRoutes = require("./routes/facultyRoutes.js");
+// const StudentRoutes = require("./routes/studentRoutes.js");
+// const projectServerRoutes = require("./routes/projectServerRoutes");
+// const teamRoutes = require("./routes/teamRoutes.js");
+// const taskRoutes = require("./routes/taskRoutes.js");
+// const notificationRoutes = require('./routes/notificationRoutes');
+// const analyticsRoutes = require("./routes/analyticsRoutes");
+
 
 // ==============================================
 // MIDDLEWARE FOR UNMATCHED API ROUTES

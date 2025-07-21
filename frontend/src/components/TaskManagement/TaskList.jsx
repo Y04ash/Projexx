@@ -452,6 +452,7 @@ const TaskList = ({ serverId, userRole, userId }) => {
               <TaskSubmission
                 task={selectedTask}
                 onSubmitted={(taskId) => {
+                  console.log("task submited from tasklist")
                   handleTaskSubmitted(taskId);
                   setSelectedTask(null);
                 }}

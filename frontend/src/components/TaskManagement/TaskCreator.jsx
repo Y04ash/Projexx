@@ -728,7 +728,7 @@ const TaskCreator = ({ serverId, serverTitle, onTaskCreated, onClose }) => {
              </div>
            )}
          </div>
-         
+          
          {uiState.teams.length > 0 && (
            <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium" role="status">
              {uiState.teams.length} teams available

@@ -226,13 +226,14 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
           </p>
         </div>
         
-        <button
+        {/* <button
           onClick={() => setShowTaskCreator(true)}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="h-4 w-4" />
           Create Task
-        </button>
+        </button> */}
+
       </div>
 
       {/* Error Message */}
@@ -348,7 +349,7 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
               : 'Try adjusting your search criteria or filters.'
             }
           </p>
-          {tasks.length === 0 && (
+          {/* {tasks.length === 0 && (
             <button
               onClick={() => setShowTaskCreator(true)}
               className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -356,7 +357,7 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
               <Plus className="h-4 w-4" />
               Create First Task
             </button>
-          )}
+          )} */}
         </div>
       ) : (
         <div className="space-y-4">
