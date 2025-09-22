@@ -1,0 +1,28 @@
+# Ignore backend files
+backend/
+*.log
+*.tmp
+
+# Ignore test files
+test_*.js
+test_*.html
+*_cookies.txt
+
+# Ignore development files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Ignore node_modules
+node_modules/
+
+# Ignore git files
+.git/
+.gitignore
+
+# Ignore deployment files
+deploy.sh
+DEPLOYMENT_GUIDE.md
+README_DEPLOYMENT.md
+TESTING_GRADING.md
