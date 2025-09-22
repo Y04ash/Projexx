@@ -29,16 +29,15 @@ try {
 const Task = require('../models/taskSchema');
 const Student = require('../models/studentSchema');
 const Faculty = require('../models/facultySchema');
+const Submission = require('../models/Submission');
 const StudentTeam = require('../models/studentTeamSchema');
 const ProjectServer = require('../models/projectServerSchema');
 
 // ✅ Safe import of new models (if they don't exist, disable features)
-let Submission = null;
 let DriveFile = null;
 let hasFileUploadSupport = false;
 
 try {
-  Submission = require('../models/Submission');
   DriveFile = require('../models/DriveFile');
   hasFileUploadSupport = true;
   console.log('✅ File upload models loaded');
@@ -195,13 +194,17 @@ router.get('/student-tasks', verifyToken, async (req, res) => {
     const teamIds = studentTeams.map(team => team._id);
     console.log(`📊 Student is in ${teamIds.length} teams`);
 
-    // ✅ FIXED QUERY: Correct status values and no projectServer populate
+    // ✅ FIXED QUERY: Check both team and teams fields for backward compatibility
     const tasks = await Task.find({
-      team: { $in: teamIds },
+      $or: [
+        { team: { $in: teamIds } }, // Old format
+        { teams: { $in: teamIds } } // New format
+      ],
       status: 'active' // ✅ Only use 'active' (removed 'published')
     })
     .populate('server', 'title code description')
-    .populate('team', 'name members') // ✅ REMOVED projectServer from here
+    .populate('team', 'name members') // Old format
+    .populate('teams', 'name members') // New format
     .populate('faculty', 'firstName lastName email')
     .sort({ dueDate: 1 });
 
@@ -220,7 +223,7 @@ router.get('/student-tasks', verifyToken, async (req, res) => {
 
     // Process tasks and add submission status
     const tasksWithStatus = await Promise.all(tasks.map(async (task) => {
-      const taskObj = task.toObject();
+      const taskObj = task.toObject ? task.toObject() : task;
       
       // Initialize submission data
       let hasSubmission = false;
@@ -309,8 +312,15 @@ router.get('/student-tasks', verifyToken, async (req, res) => {
         taskObj.daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
       }
       
-      // Add team info safely
-      if (task.team) {
+      // Add team info safely - handle both old and new formats
+      if (task.teams && task.teams.length > 0) {
+        // New format: multiple teams
+        taskObj.teamName = task.teams.map(t => t.name).join(', ');
+        taskObj.teamMemberCount = task.teams.reduce((total, team) => 
+          total + ((team.members && Array.isArray(team.members)) ? team.members.length : 0), 0
+        );
+      } else if (task.team) {
+        // Old format: single team
         taskObj.teamName = task.team.name || 'Unknown Team';
         taskObj.teamMemberCount = (task.team.members && Array.isArray(task.team.members)) ? task.team.members.length : 0;
       }
@@ -393,6 +403,7 @@ router.get('/faculty', verifyToken, async (req, res) => {
 
     const tasks = await Task.find(query)
       .populate('server', 'title code')
+      .populate('teams', 'name members')
       .populate('team', 'name members')
       .populate('faculty', 'firstName lastName email')
       .sort({ createdAt: -1 })
@@ -401,9 +412,43 @@ router.get('/faculty', verifyToken, async (req, res) => {
 
     const total = await Task.countDocuments(query);
 
+    // Deduplicate tasks by title and combine team assignments
+    const taskMap = new Map();
+    
+    tasks.forEach(task => {
+      const key = task.title;
+      if (taskMap.has(key)) {
+        // Merge team assignments
+        const existingTask = taskMap.get(key);
+        const existingTeams = existingTask.teams || [];
+        const currentTeams = task.teams || [];
+        const currentTeam = task.team ? [task.team] : [];
+        
+        // Combine all teams and remove duplicates
+        const allTeams = [...existingTeams, ...currentTeams, ...currentTeam];
+        const uniqueTeams = allTeams.filter((team, index, self) => 
+          index === self.findIndex(t => t._id.toString() === team._id.toString())
+        );
+        
+        existingTask.teams = uniqueTeams;
+        existingTask.team = null; // Clear old team field
+      } else {
+        // First occurrence of this task
+        const taskObj = task.toObject ? task.toObject() : task;
+        if (taskObj.team) {
+          taskObj.teams = [taskObj.team];
+          taskObj.team = null;
+        }
+        taskMap.set(key, taskObj);
+      }
+    });
+
+    const deduplicatedTasks = Array.from(taskMap.values());
+
     // Add submission stats for each task
-    const tasksWithStats = await Promise.all(tasks.map(async (task) => {
-      const taskObj = task.toObject();
+    const tasksWithStats = await Promise.all(deduplicatedTasks.map(async (task) => {
+      // task is already a plain object from the Map, no need to call toObject
+      const taskObj = task;
       
       try {
         const textSubmissions = task.submissions ? task.submissions.length : 0;
@@ -487,7 +532,7 @@ router.get('/student', verifyToken, async (req, res) => {
     .sort({ dueDate: 1 });
 
     const tasksWithStatus = tasks.map(task => {
-      const taskObj = task.toObject();
+      const taskObj = task.toObject ? task.toObject() : task;
       taskObj.submissionStatus = 'pending';
       return taskObj;
     });
@@ -550,14 +595,104 @@ router.get('/server/:serverId', verifyToken, async (req, res) => {
     }
 
     const tasks = await Task.find({ server: serverId })
+      .populate('teams', 'name members')
       .populate('team', 'name members')
       .populate('server', 'title code')
       .populate('faculty', 'firstName lastName')
       .sort({ createdAt: -1 });
 
+    // Deduplicate tasks by title and combine team assignments
+    const taskMap = new Map();
+    
+    tasks.forEach(task => {
+      const key = task.title;
+      if (taskMap.has(key)) {
+        // Merge team assignments
+        const existingTask = taskMap.get(key);
+        const existingTeams = existingTask.teams || [];
+        const currentTeams = task.teams || [];
+        const currentTeam = task.team ? [task.team] : [];
+        
+        // Combine all teams and remove duplicates
+        const allTeams = [...existingTeams, ...currentTeams, ...currentTeam];
+        const uniqueTeams = allTeams.filter((team, index, self) => 
+          index === self.findIndex(t => t._id.toString() === team._id.toString())
+        );
+        
+        existingTask.teams = uniqueTeams;
+        existingTask.team = null; // Clear old team field
+      } else {
+        // First occurrence of this task
+        const taskObj = task.toObject ? task.toObject() : task;
+        if (taskObj.team) {
+          taskObj.teams = [taskObj.team];
+          taskObj.team = null;
+        }
+        taskMap.set(key, taskObj);
+      }
+    });
+
+    const deduplicatedTasks = Array.from(taskMap.values());
+
+    // Add submission data for each task
+    const tasksWithSubmissions = await Promise.all(deduplicatedTasks.map(async (task) => {
+      try {
+        // Get file submissions for this task
+        let fileSubmissions = [];
+        if (hasFileUploadSupport && Submission) {
+          try {
+            fileSubmissions = await Submission.find({ task: task._id })
+              .populate('student', 'username email firstName lastName')
+              .populate('gradedBy', 'username firstName lastName')
+              .sort({ submittedAt: -1 });
+          } catch (err) {
+            console.log('File submissions not available for task:', task._id);
+          }
+        }
+
+        // Get text submissions from task schema
+        const textSubmissions = task.submissions || [];
+
+        // Combine all submissions
+        const allSubmissions = [
+          ...textSubmissions.map(sub => ({
+            ...sub,
+            type: 'text',
+            submittedAt: sub.submittedAt || new Date(),
+            status: sub.status || 'submitted'
+          })),
+          ...fileSubmissions.map(sub => {
+            const subObj = sub.toObject();
+            const submissionId = sub._id ? sub._id.toString() : (subObj._id ? subObj._id.toString() : subObj.id);
+            return {
+              ...subObj,
+              _id: submissionId, // Ensure _id is a string
+              id: submissionId, // Also set id field for consistency
+              type: 'file',
+              images: sub.images || [],
+              imageCount: sub.images ? sub.images.length : 0
+            };
+          })
+        ];
+
+        return {
+          ...task,
+          submissions: allSubmissions,
+          submissionCount: allSubmissions.length
+        };
+      } catch (err) {
+        console.error('Error processing submissions for task:', task._id, err);
+        return {
+          ...task,
+          submissions: [],
+          submissionCount: 0
+        };
+      }
+    }));
+
     res.json({
       success: true,
-      tasks: tasks || []
+      tasks: tasksWithSubmissions || []
     });
 
   } catch (error) {
@@ -706,36 +841,33 @@ router.post('/create', verifyToken, async (req, res) => {
       }
     }
 
-    const createdTasks = [];
+    // Create a single task with multiple team assignments
+    const taskData = {
+      title,
+      description,
+      instructions: instructions || '',
+      dueDate: dueDateObj,
+      maxPoints: parseInt(maxPoints),
+      server: serverId,
+      teams: teamIds, // Store all team IDs in a single field
+      faculty: req.user.id,
+      assignmentType: assignmentType || 'team',
+      allowLateSubmissions: allowLateSubmissions || false,
+      maxAttempts: parseInt(maxAttempts) || 1,
+      allowFileUpload: allowFileUpload || false,
+      allowedFileTypes: allowedFileTypes || ['pdf', 'doc', 'docx', 'txt', 'jpg', 'png'],
+      maxFileSize: parseInt(maxFileSize) || 10485760, // 10MB default
+      maxFiles: parseInt(maxFiles) || 5,
+      priority: priority || 'medium',
+      status: publishImmediately ? 'active' : 'draft'
+    };
 
-    // Create tasks for each team
-    for (const teamId of teamIds) {
-      const taskData = {
-        title,
-        description,
-        instructions: instructions || '',
-        dueDate: dueDateObj,
-        maxPoints: parseInt(maxPoints),
-        server: serverId,
-        team: teamId,
-        faculty: req.user.id,
-        assignmentType: assignmentType || 'team',
-        allowLateSubmissions: allowLateSubmissions || false,
-        maxAttempts: parseInt(maxAttempts) || 1,
-        allowFileUpload: allowFileUpload || false,
-        allowedFileTypes: allowedFileTypes || ['pdf', 'doc', 'docx', 'txt', 'jpg', 'png'],
-        maxFileSize: parseInt(maxFileSize) || 10485760, // 10MB default
-        maxFiles: parseInt(maxFiles) || 5,
-        priority: priority || 'medium',
-        status: publishImmediately ? 'active' : 'draft'
-      };
+    const task = new Task(taskData);
+    await task.save();
 
-      const task = new Task(taskData);
-      await task.save();
-      createdTasks.push(task);
-
-      // Send notifications if available
-      if (notifyStudents && publishImmediately && NotificationService) {
+    // Send notifications if available
+    if (notifyStudents && publishImmediately && NotificationService) {
+      for (const teamId of teamIds) {
         try {
           await NotificationService.notifyTaskAssigned(task, teamId);
         } catch (notifError) {
@@ -750,15 +882,15 @@ router.post('/create', verifyToken, async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: `Successfully created ${createdTasks.length} task(s)`,
-      totalCreated: createdTasks.length,
-      tasks: createdTasks.map(task => ({
+      message: `Successfully created task assigned to ${teamIds.length} team(s)`,
+      totalCreated: 1,
+      task: {
         id: task._id,
         title: task.title,
-        teamId: task.team,
+        teams: task.teams,
         status: task.status,
         allowFileUpload: task.allowFileUpload
-      }))
+      }
     });
 
   } catch (error) {
@@ -779,6 +911,74 @@ router.post('/create', verifyToken, async (req, res) => {
 // DYNAMIC ROUTES (LOWEST PRIORITY)
 // ===============================
 
+// ✅ GET TASK SUBMISSION (for checking existing submission)
+router.get('/:taskId/submission', verifyToken, async (req, res) => {
+  try {
+    const { taskId } = req.params;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    // Check if user has access to this task
+    const task = await Task.findById(taskId)
+      .populate('team', 'members')
+      .populate('teams', 'members');
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        message: 'Task not found'
+      });
+    }
+
+    // Check access permissions
+    if (userRole === 'student') {
+      let hasAccess = false;
+      
+      // Check both old team field and new teams array
+      if (task.team) {
+        hasAccess = task.team.members.some(member => member.toString() === userId);
+      } else if (task.teams && task.teams.length > 0) {
+        // Check if student is in any of the assigned teams
+        hasAccess = task.teams.some(team => 
+          team.members.some(member => member.toString() === userId)
+        );
+      }
+      
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied'
+        });
+      }
+    }
+
+    // Find existing submission
+    const submission = await Submission.findOne({
+      student: userId,
+      task: taskId
+    }).populate('student', 'username email firstName lastName');
+
+    if (!submission) {
+      return res.status(404).json({
+        success: false,
+        message: 'No submission found'
+      });
+    }
+
+    res.json({
+      success: true,
+      submission: submission
+    });
+
+  } catch (error) {
+    console.error('Error fetching task submission:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch submission',
+      error: error.message
+    });
+  }
+});
+
 // ✅ GET SINGLE TASK BY ID
 router.get('/:taskId', verifyToken, async (req, res) => {
   try {
@@ -786,6 +986,7 @@ router.get('/:taskId', verifyToken, async (req, res) => {
 
     const task = await Task.findById(taskId)
       .populate('team', 'name members')
+      .populate('teams', 'name members')
       .populate('server', 'title code')
       .populate('faculty', 'firstName lastName email');
 
@@ -802,8 +1003,17 @@ router.get('/:taskId', verifyToken, async (req, res) => {
     if (req.user.role === 'faculty') {
       hasAccess = task.faculty._id.toString() === req.user.id;
     } else if (req.user.role === 'student') {
+      // Check both old team field and new teams array
       if (task.team) {
         hasAccess = task.team.members.some(member => member.toString() === req.user.id);
+      } else if (task.teams && task.teams.length > 0) {
+        // Check if student is in any of the assigned teams
+        for (const team of task.teams) {
+          if (team.members && team.members.some(member => member.toString() === req.user.id)) {
+            hasAccess = true;
+            break;
+          }
+        }
       }
     }
 
@@ -864,7 +1074,7 @@ router.get('/:taskId', verifyToken, async (req, res) => {
     res.json({
       success: true,
       task: {
-        ...task.toObject(),
+        ...(task.toObject ? task.toObject() : task),
         submissionStatus
       }
     });
@@ -899,6 +1109,7 @@ router.post('/:taskId/submit', verifyToken, async (req, res) => {
 
     const task = await Task.findById(taskId)
       .populate('team', 'members')
+      .populate('teams', 'members')
       .populate('server', 'title code');
 
     if (!task) {
@@ -912,6 +1123,14 @@ router.post('/:taskId/submit', verifyToken, async (req, res) => {
     let hasAccess = false;
     if (task.team) {
       hasAccess = task.team.members.some(member => member.toString() === req.user.id);
+    } else if (task.teams && task.teams.length > 0) {
+      // Check if student is in any of the assigned teams
+      for (const team of task.teams) {
+        if (team.members && team.members.some(member => member.toString() === req.user.id)) {
+          hasAccess = true;
+          break;
+        }
+      }
     }
 
     if (!hasAccess) {
@@ -1083,11 +1302,23 @@ router.get('/:taskId/submissions', verifyToken, async (req, res) => {
         const fileSubmissions = await Submission.find({ task: taskId })
           .populate('student', 'firstName lastName email studentId')
           .populate('files', 'originalName size mimeType webViewLink webContentLink isImage')
+          .populate('gradedBy', 'username firstName lastName')
           .sort({ submittedAt: sortOrder === 'desc' ? -1 : 1 });
 
+        console.log('📥 Found submissions:', fileSubmissions.length);
+        fileSubmissions.forEach((sub, index) => {
+          console.log(`📥 Submission ${index + 1}:`, {
+            id: sub._id,
+            images: sub.images,
+            imagesCount: sub.images?.length || 0
+          });
+        });
+
         fileSubmissions.forEach(submission => {
+          const submissionId = submission._id ? submission._id.toString() : submission.id;
           allSubmissions.push({
-            id: submission._id,
+            id: submissionId,
+            _id: submissionId, // Ensure both id and _id are strings
             type: 'files',
             student: {
               _id: submission.student._id,
@@ -1107,14 +1338,36 @@ router.get('/:taskId/submissions', verifyToken, async (req, res) => {
               webContentLink: file.webContentLink,
               isImage: file.isImage
             })) : [],
+            images: submission.images ? submission.images.map(image => ({
+              publicId: image.publicId,
+              url: image.url,
+              secureUrl: image.secureUrl,
+              originalName: image.originalName,
+              size: image.size,
+              format: image.format,
+              uploadedAt: image.uploadedAt
+            })) : [],
             fileCount: submission.files ? submission.files.length : 0,
+            imageCount: submission.images ? submission.images.length : 0,
             submittedAt: submission.submittedAt,
             status: submission.status,
             attemptNumber: submission.attemptNumber || 1,
             isLate: submission.isLate || false,
             grade: submission.grade || null,
             feedback: submission.feedback || null,
-            gradedAt: submission.gradedAt || null
+            gradedAt: submission.gradedAt || null,
+            gradedBy: submission.gradedBy ? {
+              _id: submission.gradedBy._id,
+              username: submission.gradedBy.username,
+              firstName: submission.gradedBy.firstName,
+              lastName: submission.gradedBy.lastName
+            } : null,
+            task: {
+              _id: task._id,
+              title: task.title,
+              maxPoints: task.maxPoints,
+              status: task.status
+            }
           });
         });
       } catch (driveError) {
@@ -1144,6 +1397,12 @@ router.get('/:taskId/submissions', verifyToken, async (req, res) => {
         return aValue > bValue ? 1 : -1;
       }
     });
+
+    console.log('📤 Final submissions response:', filteredSubmissions.map(sub => ({
+      id: sub.id,
+      images: sub.images,
+      imageCount: sub.imageCount
+    })));
 
     // Apply pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);

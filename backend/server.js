@@ -39,7 +39,7 @@ morgan = safeRequire("morgan");
 socketIo = safeRequire("socket.io");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 const base_api = `http://localhost:/${PORT}`
 // ==============================================
 // TRUST PROXY & SECURITY SETUP
@@ -377,27 +377,24 @@ app.use('/static', express.static(path.join(__dirname, 'public'), {
 // MONGODB CONNECTION - BULLETPROOF
 // ==============================================
 
-const MONGO_URI = process.env.MONGO_URI || 
-                  process.env.MONGODB_URI || 
+const MONGO_URI = process.env.MONGODB_URI || 
+                  process.env.MONGO_URI || 
                   process.env.DATABASE_URL ||
-                  "mongodb+srv://yashr:NPuILa9Awq8H0DED@cluster0.optidea.mongodb.net/project_management?retryWrites=true&w=majority&appName=Cluster0";
+                  "mongodb://localhost:27017/projexx";
 
 console.log('🔌 Connecting to MongoDB...');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(MONGO_URI
-    //   , {
-    //   useNewUrlParser: true,
-    //   useUnifiedTopology: true,
-    //   maxPoolSize: 10,
-    //   serverSelectionTimeoutMS: 10000,
-    //   socketTimeoutMS: 45000,
-    //   family: 4,
-    //   bufferCommands: false,
-    //   bufferMaxEntries: 0
-    // }
-  );
+    const conn = await mongoose.connect(MONGO_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      family: 4,
+      bufferCommands: false
+    });
 
     console.log("✅ Connected to MongoDB successfully");
     console.log(`📊 Database: ${conn.connection.db.databaseName}`);
@@ -415,6 +412,10 @@ const connectDB = async () => {
 
 // Connect to database
 connectDB();
+
+// Initialize PostgreSQL
+const { initializeDatabase } = require('./config/postgres');
+initializeDatabase();
 
 // MongoDB event listeners
 mongoose.connection.on('error', (err) => {
@@ -454,6 +455,10 @@ try {
       maxHttpBufferSize: 1e6
     });
 
+    // Initialize notification service with Socket.io
+    const notificationService = require('./services/notificationService');
+    notificationService.setSocketIO(io);
+    
     // Socket.io connection handling
     io.on('connection', (socket) => {
       console.log('👤 [SOCKET] User connected:', socket.id);
@@ -645,8 +650,8 @@ const safeLoadRoute = (routePath, routeName, mountPath, isRequired = false) => {
 console.log('\n🔗 [ROUTES] Starting route loading process...');
 
 // Core authentication routes (REQUIRED)
-const authLoaded = safeLoadRoute('./routes/facultyRoutes', 'Faculty Auth', '/api/faculty', true);
-const studentLoaded = safeLoadRoute('./routes/studentRoutes', 'Student Auth', '/api/student', true);
+const authLoaded = safeLoadRoute('./routes/facultyRoutes.js', 'Faculty Auth', '/api/faculty', true);
+const studentLoaded = safeLoadRoute('./routes/studentRoutes.js', 'Student Auth', '/api/student', true);
 // alternate faculty route mounting
 if(!authLoaded){
     try {
@@ -670,8 +675,8 @@ if (!studentLoaded) {
 }
 
 // Core project management routes (REQUIRED)
-const serverLoaded = safeLoadRoute('./routes/projectServerRoutes', 'Project Servers', '/api/servers', true);
-const teamLoaded = safeLoadRoute('./routes/teamRoutes', 'Teams', '/api/teams', true);
+const serverLoaded = safeLoadRoute('./routes/projectServerRoutes.js', 'Project Servers', '/api/servers', true);
+const teamLoaded = safeLoadRoute('./routes/teamRoutes.js', 'Teams', '/api/teams', true);
 
 // Alternative mounting for project servers
 if (!serverLoaded) {
@@ -696,7 +701,7 @@ if (!teamLoaded) {
 }
 
 // Task management routes (CRITICAL)
-const taskLoaded = safeLoadRoute('./routes/taskRoutes', 'Tasks', '/api/tasks', true);
+const taskLoaded = safeLoadRoute('./routes/taskRoutes.js', 'Tasks', '/api/tasks', true);
 if(!taskLoaded) {
   try {
     const taskLoaded = require('./routes/taskRoutes');
@@ -708,18 +713,21 @@ if(!taskLoaded) {
 
 }
 // File management routes (IMPORTANT)
-const fileLoaded = safeLoadRoute('./routes/fileRoutes', 'File Upload', '/api/files', false);
-const driveLoaded = safeLoadRoute('./routes/googleDriveRoutes', 'Google Drive', '/api/drive', false);
+const fileLoaded = safeLoadRoute('./routes/fileRoutes.js', 'File Upload', '/api/files', false);
+const driveLoaded = safeLoadRoute('./routes/googleDriveRoutes.js', 'Google Drive', '/api/drive', false);
 
 // Auth routes (if separate)
-safeLoadRoute('./routes/authRoutes', 'Auth', '/api/auth', false);
+safeLoadRoute('./routes/authRoutes.js', 'Auth', '/api/auth', false);
 
 // Feature routes (OPTIONAL)
-safeLoadRoute('./routes/notificationRoutes', 'Notifications', '/api/notifications', false);
-safeLoadRoute('./routes/analyticsRoutes', 'Analytics', '/api/analytics', false);
-safeLoadRoute('./routes/calendarRoutes', 'Calendar', '/api/calendar', false);
-safeLoadRoute('./routes/messagingRoutes', 'Messaging', '/api/messaging', false);
-safeLoadRoute('./routes/settingsRoutes', 'Settings', '/api/settings', false);
+safeLoadRoute('./routes/notificationRoutes.js', 'Notifications', '/api/notifications', false);
+safeLoadRoute('./routes/analyticsRoutes.js', 'Analytics', '/api/analytics', false);
+safeLoadRoute('./routes/calendarRoutes.js', 'Calendar', '/api/calendar', false);
+safeLoadRoute('./routes/messagingRoutes.js', 'Messaging', '/api/messaging', false);
+safeLoadRoute('./routes/settingsRoutes.js', 'Settings', '/api/settings', false);
+safeLoadRoute('./routes/submissionRoutes.js', 'Submissions', '/api/submissions', false);
+// Also register submission routes under tasks for frontend compatibility
+safeLoadRoute('./routes/submissionRoutes.js', 'Task Submissions', '/api/tasks', false);
 
 // ==============================================
 // FALLBACK ROUTES FOR FAILED CRITICAL ROUTES
@@ -924,19 +932,56 @@ app.use((req, res, next) => {
   next();
 });
 
-// 404 handler for all other routes
-app.use('*', (req, res) => {
-  console.log(`❌ [404] Route not found: ${req.method} ${req.originalUrl}`);
+// ==============================================
+// SPA ROUTING CONFIGURATION
+// ==============================================
+
+// Serve React app for all non-API routes (SPA routing)
+const frontendBuildPath = path.join(__dirname, '../frontend/build');
+
+// Check if frontend build exists
+if (fs.existsSync(frontendBuildPath)) {
+  console.log('✅ [SPA] Frontend build found, enabling SPA routing');
   
-  res.status(404).json({ 
-    success: false,
-    message: `Route not found: ${req.originalUrl}`,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-    suggestion: 'Check API documentation at /',
-    availableRoutes: routeRegistry.map(r => r.path)
+  // Serve static files from React build
+  app.use(express.static(frontendBuildPath));
+  
+  // Handle React routing - return index.html for all non-API routes
+  app.get('*', (req, res) => {
+    // Skip API routes
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ 
+        success: false,
+        message: `API route not found: ${req.originalUrl}`,
+        method: req.method,
+        timestamp: new Date().toISOString(),
+        suggestion: 'Check API documentation at /',
+        availableRoutes: routeRegistry.map(r => r.path)
+      });
+    }
+    
+    // Serve React app for all other routes
+    console.log(`🔄 [SPA] Serving React app for route: ${req.originalUrl}`);
+    res.sendFile(path.join(frontendBuildPath, 'index.html'));
   });
-});
+} else {
+  console.log('⚠️  [SPA] Frontend build not found, SPA routing disabled');
+  console.log('   Expected build path:', frontendBuildPath);
+  
+  // 404 handler for all other routes when no frontend build
+  app.use('*', (req, res) => {
+    console.log(`❌ [404] Route not found: ${req.method} ${req.originalUrl}`);
+    
+    res.status(404).json({ 
+      success: false,
+      message: `Route not found: ${req.originalUrl}`,
+      method: req.method,
+      timestamp: new Date().toISOString(),
+      suggestion: 'Check API documentation at /',
+      availableRoutes: routeRegistry.map(r => r.path)
+    });
+  });
+}
 
 // Global error handler - BULLETPROOF
 app.use((err, req, res, next) => {
@@ -1096,7 +1141,7 @@ app.use((err, req, res, next) => {
 // GRACEFUL SHUTDOWN HANDLING
 // ==============================================
 
-const gracefulShutdown = (signal) => {
+const gracefulShutdown = async (signal) => {
   console.log(`\n🛑 [SHUTDOWN] ${signal} received, starting graceful shutdown...`);
   
   const shutdownTimeout = setTimeout(() => {
@@ -1106,7 +1151,7 @@ const gracefulShutdown = (signal) => {
   
   // Close server
   if (server) {
-    server.close((err) => {
+    server.close(async (err) => {
       if (err) {
         console.error('❌ [SHUTDOWN] Error closing HTTP server:', err);
       } else {
@@ -1114,25 +1159,27 @@ const gracefulShutdown = (signal) => {
       }
       
       // Close database connection
-      mongoose.connection.close(false, (err) => {
-        if (err) {
-          console.error('❌ [SHUTDOWN] Error closing MongoDB connection:', err);
-        } else {
-          console.log('✅ [SHUTDOWN] MongoDB connection closed');
-        }
-        
-        clearTimeout(shutdownTimeout);
-        console.log('🏁 [SHUTDOWN] Graceful shutdown completed');
-        process.exit(0);
-      });
+      try {
+        await mongoose.connection.close();
+        console.log('✅ [SHUTDOWN] MongoDB connection closed');
+      } catch (err) {
+        console.error('❌ [SHUTDOWN] Error closing MongoDB connection:', err);
+      }
+      
+      clearTimeout(shutdownTimeout);
+      console.log('🏁 [SHUTDOWN] Graceful shutdown completed');
+      process.exit(0);
     });
   } else {
     // No server, just close database
-    mongoose.connection.close(false, () => {
+    try {
+      await mongoose.connection.close();
       console.log('✅ [SHUTDOWN] MongoDB connection closed');
-      clearTimeout(shutdownTimeout);
-      process.exit(0);
-    });
+    } catch (err) {
+      console.error('❌ [SHUTDOWN] Error closing MongoDB connection:', err);
+    }
+    clearTimeout(shutdownTimeout);
+    process.exit(0);
   }
 };
 

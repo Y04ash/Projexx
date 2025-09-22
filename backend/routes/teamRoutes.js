@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const StudentTeam = require('../models/studentTeamSchema'); // ✅ FIXED: Correct import path
 const Student = require('../models/studentSchema'); // ✅ FIXED: Correct import path
 const ProjectServer = require('../models/projectServerSchema'); // ✅ FIXED: Correct import path
@@ -195,33 +196,28 @@ router.post('/createTeam', verifyToken, async (req, res) => {
 
     const studentIds = students.map(s => s._id);
     console.log("sstudent ids",studentIds)
+    
+    // Include the creator in the team members
+    const creatorId = new mongoose.Types.ObjectId(req.user.id);
+    const allMemberIds = [creatorId, ...studentIds];
+    console.log("all member ids including creator", allMemberIds);
+    
     // Create the team
     const newTeam = new StudentTeam({
       name: name.trim(),
       description: description?.trim() || '',
       projectServer: projectServer.toUpperCase(),
       creator: req.user.id,
-      members: studentIds,
+      members: allMemberIds,
       maxMembers: maxMembers || 4,
       status: 'active'
     });
 
     await newTeam.save();
 
-    // ⭐ Update creator and all current members (in creation, only creator)
-     await Student.findByIdAndUpdate(
-      req.user.id,
-      {
-        $addToSet: { 
-          joinedTeams: newTeam._id, 
-          joinedServers: server._id 
-        }
-      },
-      { new: true }
-    );
-
+    // ⭐ Update all team members (including creator)
     await Student.updateMany(
-      { _id: { $in: studentIds} },
+      { _id: { $in: allMemberIds} },
       {
         $addToSet: {
           joinedTeams: newTeam._id,

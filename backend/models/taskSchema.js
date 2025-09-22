@@ -37,9 +37,15 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'StudentTeam',
     required: function() {
-      return this.assignmentType === 'team';
+      return this.assignmentType === 'team' && !this.teams;
     }
   },
+
+  // Multiple teams field for team assignments
+  teams: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StudentTeam'
+  }],
 
   // For individual assignments
   student: {

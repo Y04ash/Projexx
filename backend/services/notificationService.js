@@ -1,187 +1,217 @@
+// backend/services/notificationService.js
 const Notification = require('../models/notificationSchema');
-const Faculty = require('../models/facultySchema');
-const Student = require('../models/studentSchema');
 
 class NotificationService {
-  // Send notification to faculty when team joins project server
-  static async notifyTeamJoinedServer(projectServer, team, students) {
-    try {
-      const notification = new Notification({
-        recipient: projectServer.faculty,
-        recipientModel: 'Faculty',
-        type: 'team_joined',
-        title: 'New Team Joined Your Project',
-        message: `Team "${team.name}" with ${students.length} students has joined "${projectServer.title}"`,
-        data: {
-          serverId: projectServer._id,
-          teamId: team._id
-        }
-      });
-      
-      await notification.save();
-      
-      // Send real-time notification if using Socket.io
-      if (global.io) {
-        global.io.to(`faculty_${projectServer.faculty}`).emit('notification', notification);
-      }
-      
-      return notification;
-    } catch (error) {
-      console.error('Failed to send team joined notification:', error);
-    }
+  constructor(io = null) {
+    this.io = io;
   }
 
-  // Send notification when task is assigned
-  static async notifyTaskAssigned(task, team, projectServer) {
+  // Set Socket.io instance
+  setSocketIO(io) {
+    this.io = io;
+  }
+
+  // Create a notification
+  async createNotification(notificationData) {
     try {
-      // Notify all team members
-      const notifications = team.members.map(studentId => ({
-        recipient: studentId,
-        recipientModel: 'Student',
-        sender: task.faculty,
-        senderModel: 'Faculty',
-        type: 'task_assigned',
-        title: 'New Task Assigned',
-        message: `You have a new task: "${task.title}" in ${projectServer.title}`,
-        data: {
-          taskId: task._id,
-          teamId: team._id,
-          serverId: projectServer._id
-        }
-      }));
+      const notification = new Notification(notificationData);
+      await notification.save();
       
-      const created = await Notification.insertMany(notifications);
-      
-      // Send real-time notifications
-      if (global.io) {
-        team.members.forEach(studentId => {
-          global.io.to(`student_${studentId}`).emit('notification', {
-            type: 'task_assigned',
-            task: task
-          });
+      // Send real-time notification if Socket.io is available
+      if (this.io) {
+        this.io.to(notificationData.recipient.toString()).emit('new_notification', {
+          id: notification._id,
+          type: notification.type,
+          title: notification.title,
+          message: notification.message,
+          data: notification.data,
+          priority: notification.priority,
+          createdAt: notification.createdAt
         });
       }
       
-      return created;
+      return notification;
     } catch (error) {
-      console.error('Failed to send task assigned notifications:', error);
+      console.error('Error creating notification:', error);
+      throw error;
     }
   }
 
-  // Send notification when task is submitted
-  static async notifyTaskSubmitted(task, submission, student) {
+  // Send task submission notification to faculty
+  async notifyTaskSubmission(submissionData) {
     try {
-      const notification = new Notification({
-        recipient: task.faculty,
+      const { facultyId, studentName, taskTitle, submissionId, taskId, studentId } = submissionData;
+      
+      const notification = await this.createNotification({
+        recipient: facultyId,
         recipientModel: 'Faculty',
-        sender: student._id,
-        senderModel: 'Student',
-        type: 'task_submitted',
-        title: 'Task Submitted',
-        message: `${student.firstName} ${student.lastName} has submitted "${task.title}"`,
+        type: 'task_submission',
+        title: 'New Task Submission',
+        message: `${studentName} has submitted task: ${taskTitle}`,
         data: {
-          taskId: task._id,
-          studentId: student._id,
-          submissionId: submission._id
-        }
+          submissionId,
+          taskId,
+          studentId,
+          studentName,
+          taskTitle,
+          action: 'view_submission'
+        },
+        priority: 'medium',
+        read: false
       });
-      
-      await notification.save();
-      
-      // Send real-time notification
-      if (global.io) {
-        global.io.to(`faculty_${task.faculty}`).emit('notification', notification);
-      }
-      
+
+      console.log(`📧 Notification sent to faculty ${facultyId} for task submission by ${studentName}`);
       return notification;
     } catch (error) {
-      console.error('Failed to send task submitted notification:', error);
+      console.error('Error sending task submission notification:', error);
+      throw error;
     }
   }
 
-  // Send notification when task is verified
-  static async notifyTaskVerified(task, student, grade, feedback) {
+  // Send task status update notification to student
+  async notifyTaskStatusUpdate(updateData) {
     try {
-      const notification = new Notification({
-        recipient: student._id,
+      const { studentId, taskTitle, status, feedback, facultyName } = updateData;
+      
+      const statusMessages = {
+        'approved': 'Your task has been approved!',
+        'rejected': 'Your task needs revision',
+        'reviewed': 'Your task has been reviewed'
+      };
+
+      const notification = await this.createNotification({
+        recipient: studentId,
         recipientModel: 'Student',
-        sender: task.faculty,
-        senderModel: 'Faculty',
-        type: 'task_verified',
-        title: 'Task Graded',
-        message: `Your submission for "${task.title}" has been graded: ${grade}/${task.maxPoints}`,
+        type: 'task_status_update',
+        title: 'Task Status Update',
+        message: `${statusMessages[status] || 'Your task status has been updated'}: ${taskTitle}`,
         data: {
-          taskId: task._id,
-          grade: grade,
-          feedback: feedback
-        }
+          taskTitle,
+          status,
+          feedback,
+          facultyName,
+          action: 'view_task'
+        },
+        priority: 'high',
+        read: false
       });
-      
-      await notification.save();
-      
-      // Send real-time notification
-      if (global.io) {
-        global.io.to(`student_${student._id}`).emit('notification', notification);
-      }
-      
+
+      console.log(`📧 Notification sent to student ${studentId} for task status update`);
       return notification;
     } catch (error) {
-      console.error('Failed to send task verified notification:', error);
+      console.error('Error sending task status update notification:', error);
+      throw error;
     }
   }
 
-  // Get notifications for a user
-  static async getUserNotifications(userId, userModel, limit = 20, skip = 0) {
+  // Send general notification
+  async sendNotification(recipientId, type, title, message, data = {}, priority = 'medium') {
     try {
-      const notifications = await Notification.find({
-        recipient: userId,
-        recipientModel: userModel
-      })
-      .sort({ createdAt: -1 })
-      .limit(limit)
-      .skip(skip)
-      .populate('sender', 'firstName lastName email')
-      .populate('data.serverId', 'title code')
-      .populate('data.teamId', 'name')
-      .populate('data.taskId', 'title');
-      
-      return notifications;
+      const notification = await this.createNotification({
+        recipient: recipientId,
+        type,
+        title,
+        message,
+        data,
+        priority,
+        read: false
+      });
+
+      console.log(`📧 Notification sent to user ${recipientId}: ${title}`);
+      return notification;
     } catch (error) {
-      console.error('Failed to get user notifications:', error);
-      return [];
+      console.error('Error sending notification:', error);
+      throw error;
     }
   }
 
   // Mark notification as read
-  static async markAsRead(notificationId, userId) {
+  async markAsRead(notificationId, userId) {
     try {
       const notification = await Notification.findOneAndUpdate(
         { _id: notificationId, recipient: userId },
-        { isRead: true, readAt: new Date() },
+        { read: true, readAt: new Date() },
         { new: true }
       );
-      
+
+      if (!notification) {
+        throw new Error('Notification not found or access denied');
+      }
+
       return notification;
     } catch (error) {
-      console.error('Failed to mark notification as read:', error);
+      console.error('Error marking notification as read:', error);
+      throw error;
     }
   }
 
-  // Get unread count
-  static async getUnreadCount(userId, userModel) {
+  // Get user notifications
+  async getUserNotifications(userId, limit = 50, skip = 0) {
+    try {
+      const notifications = await Notification.find({ recipient: userId })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .skip(skip);
+
+      return notifications;
+    } catch (error) {
+      console.error('Error fetching user notifications:', error);
+      throw error;
+    }
+  }
+
+  // Get unread notification count
+  async getUnreadCount(userId) {
     try {
       const count = await Notification.countDocuments({
         recipient: userId,
-        recipientModel: userModel,
-        isRead: false
+        read: false
       });
-      
+
       return count;
     } catch (error) {
-      console.error('Failed to get unread count:', error);
-      return 0;
+      console.error('Error getting unread notification count:', error);
+      throw error;
+    }
+  }
+
+  // Mark all notifications as read
+  async markAllAsRead(userId) {
+    try {
+      const result = await Notification.updateMany(
+        { recipient: userId, read: false },
+        { read: true, readAt: new Date() }
+      );
+
+      console.log(`📧 Marked ${result.modifiedCount} notifications as read for user ${userId}`);
+      return result;
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+      throw error;
+    }
+  }
+
+  // Delete notification
+  async deleteNotification(notificationId, userId) {
+    try {
+      const notification = await Notification.findOneAndDelete({
+        _id: notificationId,
+        recipient: userId
+      });
+
+      if (!notification) {
+        throw new Error('Notification not found or access denied');
+      }
+
+      return notification;
+    } catch (error) {
+      console.error('Error deleting notification:', error);
+      throw error;
     }
   }
 }
 
-module.exports = NotificationService;
+// Create singleton instance
+const notificationService = new NotificationService();
+
+module.exports = notificationService;

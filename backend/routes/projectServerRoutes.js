@@ -1,5 +1,6 @@
 // backend/routes/projectServerRoutes.js
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 const verifyToken = require("../middleware/verifyToken");
 
@@ -137,7 +138,6 @@ router.get("/faculty-servers", verifyToken, async (req, res) => {
 
     // Step 2: Test database connection
     try {
-      const mongoose = require('mongoose');
       console.log("🔍 Step 2 - Database connection:", {
         state: mongoose.connection.readyState,
         name: mongoose.connection.name
@@ -202,22 +202,38 @@ router.get("/faculty-servers", verifyToken, async (req, res) => {
     // Step 7: Return simple response (without complex processing)
     console.log("🔍 Step 7 - Returning simple response...");
 
-    const simpleServers = populatedServers.map(server => ({
-      ...server.toObject(),
-      teams: [], // Empty for now
-      stats: {
-        teamsCount: 0,
-        tasksCount: 0,
-        studentsCount: 0,
-        lastActivity: server.updatedAt
-      }
+    // Get actual counts for each server
+    const serversWithStats = await Promise.all(populatedServers.map(async (server) => {
+      const teamsCount = await StudentTeam.countDocuments({ 
+        projectServer: server.code
+      });
+      
+      const tasksCount = await Task.countDocuments({ 
+        server: server._id 
+      });
+      
+      // Get unique students count from teams
+      const teams = await StudentTeam.find({ projectServer: server.code });
+      const allStudentIds = teams.flatMap(team => team.members);
+      const uniqueStudentsCount = new Set(allStudentIds.map(id => id.toString())).size;
+      
+      return {
+        ...server.toObject(),
+        teams: [], // Empty for now
+        stats: {
+          teamsCount,
+          tasksCount,
+          studentsCount: uniqueStudentsCount,
+          lastActivity: server.updatedAt
+        }
+      };
     }));
 
     console.log("✅ === DIAGNOSTIC SUCCESSFUL ===");
 
     res.status(200).json({
       success: true,
-      servers: simpleServers,
+      servers: serversWithStats,
       message: `Found ${populatedServers.length} project servers`,
       diagnostic: "All steps passed successfully"
     });

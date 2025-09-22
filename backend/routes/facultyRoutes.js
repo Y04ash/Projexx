@@ -1,6 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const Faculty = require("../models/facultySchema.js");
+const ProjectServer = require("../models/projectServerSchema.js");
+const StudentTeam = require("../models/studentTeamSchema.js");
+const Task = require("../models/taskSchema.js");
 
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
@@ -9,11 +12,36 @@ const bcrypt = require('bcryptjs');
 const { jwtSecret, jwtExpiresIn } = require("../config/jwt");
 const verifyToken = require("../middleware/verifyToken");
 
-router.get("/dashboard", verifyToken, (req, res) => {
+router.get("/dashboard", verifyToken, async (req, res) => {
     try {
-        res.json({ message: `Hello, ${req.user.role}!`, userId: req.user.id });
+        // Get faculty info
+        const faculty = await Faculty.findById(req.user.id).select('-password');
+        
+        if (!faculty) {
+            return res.status(404).json({ message: "Faculty not found" });
+        }
+
+        // Get basic stats
+        const projectServersCount = await ProjectServer.countDocuments({ faculty: req.user.id });
+        const teamsCount = await StudentTeam.countDocuments({ 
+            projectServer: { $in: await ProjectServer.find({ faculty: req.user.id }).distinct('code') }
+        });
+        const tasksCount = await Task.countDocuments({ faculty: req.user.id });
+
+        res.json({ 
+            message: `Hello, ${req.user.role}!`, 
+            userId: req.user.id,
+            faculty: faculty,
+            role: 'faculty',
+            stats: {
+                projectServers: projectServersCount,
+                teams: teamsCount,
+                tasks: tasksCount
+            }
+        });
     } catch(err) {
-        console.log(err);
+        console.log('Faculty dashboard error:', err);
+        res.status(500).json({ message: "Internal server error" });
     }
 });
 

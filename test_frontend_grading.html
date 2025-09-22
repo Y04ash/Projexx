@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grading Test - Frontend Simulation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        .warning { color: #ffc107; }
+        .info { color: #17a2b8; }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.warning { background: #fff3cd; color: #856404; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Grading Functionality Test</h1>
+    <p>This page simulates the frontend grading functionality to test for the [object Object] issue.</p>
+
+    <div class="container">
+        <h2>🔐 Authentication</h2>
+        <div class="test-section">
+            <div class="form-group">
+                <label for="email">Faculty Email:</label>
+                <input type="email" id="email" value="faculty@test.com">
+            </div>
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" value="faculty123">
+            </div>
+            <button class="button" onclick="login()">Login</button>
+            <div id="loginStatus"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📋 Task Management</h2>
+        <div class="test-section">
+            <button class="button" onclick="loadTasks()" id="loadTasksBtn">Load Tasks</button>
+            <button class="button" onclick="loadSubmissions()" id="loadSubmissionsBtn" disabled>Load Submissions</button>
+            <div id="taskStatus"></div>
+            <div id="taskList"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>🎯 Grading Tests</h2>
+        <div class="test-section">
+            <h3>Single Grading Test</h3>
+            <button class="button" onclick="testSingleGrading()" id="singleGradingBtn" disabled>Test Single Grading</button>
+            <div id="singleGradingStatus"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Multiple Grading Test</h3>
+            <button class="button" onclick="testMultipleGrading()" id="multipleGradingBtn" disabled>Test Multiple Grading</button>
+            <div id="multipleGradingStatus"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>📊 Test Logs</h2>
+        <div class="test-section">
+            <button class="button" onclick="clearLogs()">Clear Logs</button>
+            <div id="logs" class="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = 'http://localhost:5001/api';
+        let authToken = null;
+        let currentTask = null;
+        let currentSubmission = null;
+        let gradingAttempts = 0;
+
+        // Utility functions
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('logs');
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : 'info';
+            logElement.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function setStatus(elementId, message, type = 'info') {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function enableButton(buttonId, enabled = true) {
+            document.getElementById(buttonId).disabled = !enabled;
+        }
+
+        // API functions
+        async function apiRequest(method, endpoint, data = null) {
+            try {
+                const config = {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(authToken && { 'Authorization': `Bearer ${authToken}` })
+                    },
+                    credentials: 'include'
+                };
+                
+                if (data) {
+                    config.body = JSON.stringify(data);
+                }
+                
+                const response = await fetch(`${API_BASE}${endpoint}`, config);
+                const result = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(result.message || `HTTP ${response.status}`);
+                }
+                
+                return result;
+            } catch (error) {
+                log(`API Error: ${method} ${endpoint} - ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // Test functions
+        async function login() {
+            log('🔐 Attempting faculty login...');
+            
+            try {
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    authToken = data.token;
+                    setStatus('loginStatus', '✅ Login successful', 'success');
+                    log('✅ Faculty login successful');
+                    enableButton('loadTasksBtn');
+                    return true;
+                } else {
+                    throw new Error(data.message || 'Login failed');
+                }
+            } catch (error) {
+                setStatus('loginStatus', `❌ Login failed: ${error.message}`, 'error');
+                log(`❌ Login failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        async function loadTasks() {
+            log('📋 Loading faculty tasks...');
+            
+            try {
+                const data = await apiRequest('GET', '/tasks/faculty');
+                const tasks = data.tasks || [];
+                
+                log(`✅ Found ${tasks.length} tasks`);
+                
+                // Find a task with submissions
+                const taskWithSubmissions = tasks.find(task => 
+                    task.submissions && task.submissions.length > 0
+                );
+                
+                if (taskWithSubmissions) {
+                    currentTask = taskWithSubmissions;
+                    log(`📝 Selected task: ${taskWithSubmissions.title}`);
+                    log(`   Task ID: ${taskWithSubmissions._id}`);
+                    log(`   Submissions: ${taskWithSubmissions.submissions.length}`);
+                    
+                    setStatus('taskStatus', `✅ Found task with submissions: ${taskWithSubmissions.title}`, 'success');
+                    enableButton('loadSubmissionsBtn');
+                    enableButton('singleGradingBtn');
+                    enableButton('multipleGradingBtn');
+                    
+                    displayTaskInfo(taskWithSubmissions);
+                } else {
+                    setStatus('taskStatus', '❌ No tasks with submissions found', 'error');
+                    log('❌ No tasks with submissions found');
+                }
+            } catch (error) {
+                setStatus('taskStatus', `❌ Failed to load tasks: ${error.message}`, 'error');
+                log(`❌ Failed to load tasks: ${error.message}`, 'error');
+            }
+        }
+
+        function displayTaskInfo(task) {
+            const taskList = document.getElementById('taskList');
+            taskList.innerHTML = `
+                <h4>Task Details:</h4>
+                <p><strong>Title:</strong> ${task.title}</p>
+                <p><strong>ID:</strong> ${task._id}</p>
+                <p><strong>Max Points:</strong> ${task.maxPoints}</p>
+                <p><strong>Submissions:</strong> ${task.submissions.length}</p>
+                <h5>Submissions:</h5>
+                <ul>
+                    ${task.submissions.map((sub, index) => `
+                        <li>
+                            <strong>Submission ${index + 1}:</strong><br>
+                            ID: ${sub.id || sub._id}<br>
+                            ID Type: ${typeof (sub.id || sub._id)}<br>
+                            Grade: ${sub.grade || 'Not graded'}<br>
+                            Status: ${sub.status || 'Unknown'}
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+        }
+
+        async function loadSubmissions() {
+            if (!currentTask) {
+                log('❌ No task selected', 'error');
+                return;
+            }
+            
+            log(`📋 Loading submissions for task: ${currentTask._id}`);
+            
+            try {
+                const data = await apiRequest('GET', `/tasks/${currentTask._id}/submissions`);
+                const submissions = data.submissions || [];
+                
+                log(`✅ Found ${submissions.length} submissions`);
+                
+                if (submissions.length > 0) {
+                    currentSubmission = submissions[0];
+                    log(`📝 Selected submission: ${currentSubmission.id || currentSubmission._id}`);
+                    log(`   ID Type: ${typeof (currentSubmission.id || currentSubmission._id)}`);
+                    log(`   Grade: ${currentSubmission.grade || 'Not graded'}`);
+                }
+            } catch (error) {
+                log(`❌ Failed to load submissions: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSingleGrading() {
+            log('🎯 Testing single grading attempt...');
+            gradingAttempts = 0;
+            
+            const success = await performGrading(1);
+            if (success) {
+                setStatus('singleGradingStatus', '✅ Single grading test passed', 'success');
+            } else {
+                setStatus('singleGradingStatus', '❌ Single grading test failed', 'error');
+            }
+        }
+
+        async function testMultipleGrading() {
+            log('🔄 Testing multiple grading attempts...');
+            gradingAttempts = 0;
+            
+            const attempts = 3;
+            let successCount = 0;
+            
+            for (let i = 1; i <= attempts; i++) {
+                log(`\n--- Grading Attempt ${i} ---`);
+                
+                // Refresh task data before each attempt (except first)
+                if (i > 1) {
+                    log('🔄 Refreshing task data...');
+                    await loadTasks();
+                    if (currentTask) {
+                        await loadSubmissions();
+                    }
+                }
+                
+                const success = await performGrading(i);
+                if (success) {
+                    successCount++;
+                }
+                
+                // Wait between attempts
+                if (i < attempts) {
+                    log('⏳ Waiting 2 seconds before next attempt...');
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+            
+            const message = `📊 Multiple grading results: ${successCount}/${attempts} successful`;
+            log(message);
+            
+            if (successCount === attempts) {
+                setStatus('multipleGradingStatus', '✅ All multiple grading tests passed', 'success');
+            } else {
+                setStatus('multipleGradingStatus', `⚠️ ${message}`, 'warning');
+            }
+        }
+
+        async function performGrading(attemptNumber) {
+            if (!currentTask || !currentTask.submissions || currentTask.submissions.length === 0) {
+                log('❌ No submissions available for grading', 'error');
+                return false;
+            }
+            
+            const submission = currentTask.submissions[0];
+            let submissionId = submission.id || submission._id;
+            
+            log(`📋 Grading attempt ${attemptNumber}:`);
+            log(`   Original submission ID: ${submissionId}`);
+            log(`   ID Type: ${typeof submissionId}`);
+            
+            // Check if ID is an object
+            if (typeof submissionId === 'object' && submissionId !== null) {
+                log('⚠️ WARNING: Submission ID is an object!', 'warning');
+                log(`   Object details: ${JSON.stringify(submissionId)}`, 'warning');
+                
+                // Try to extract the ID
+                submissionId = submissionId.id || submissionId._id || submissionId.toString();
+                log(`   Extracted ID: ${submissionId}`);
+                log(`   Extracted ID Type: ${typeof submissionId}`);
+            }
+            
+            // Validate the ID
+            if (!submissionId || submissionId === 'undefined' || submissionId === 'null' || submissionId === '[object Object]') {
+                log('❌ Invalid submission ID after processing', 'error');
+                return false;
+            }
+            
+            if (!/^[0-9a-fA-F]{24}$/.test(submissionId)) {
+                log(`❌ Invalid ObjectId format: ${submissionId}`, 'error');
+                return false;
+            }
+            
+            log(`✅ Using submission ID: ${submissionId}`);
+            
+            // Attempt to grade
+            try {
+                const gradeData = {
+                    grade: 70 + attemptNumber * 5,
+                    feedback: `Test grading attempt ${attemptNumber}. This is a comprehensive test of the grading system to verify that submission IDs are handled correctly.`,
+                    status: 'graded'
+                };
+                
+                log('📤 Sending grading request...');
+                const response = await apiRequest('PUT', `/submissions/${submissionId}/grade`, gradeData);
+                
+                log('✅ Grading successful!', 'success');
+                log(`   Grade: ${response.submission?.grade}`);
+                log(`   Status: ${response.submission?.status}`);
+                gradingAttempts++;
+                return true;
+                
+            } catch (error) {
+                log(`❌ Grading failed: ${error.message}`, 'error');
+                return false;
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('logs').innerHTML = '';
+        }
+
+        // Initialize
+        log('🚀 Grading Test Page Loaded');
+        log('Ready to test grading functionality');
+    </script>
+</body>
+</html>
+

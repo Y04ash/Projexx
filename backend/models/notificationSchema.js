@@ -27,6 +27,7 @@ const notificationSchema = new mongoose.Schema({
       'team_joined',
       'task_assigned',
       'task_submitted',
+      'task_submission',
       'task_verified',
       'task_graded',
       'project_server_joined',

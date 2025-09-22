@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Upload Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+        .upload-area.dragover {
+            border-color: #007bff;
+            background-color: #e3f2fd;
+        }
+        .image-preview {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+        .image-item {
+            position: relative;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .image-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+        .remove-btn {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: red;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            cursor: pointer;
+        }
+        .submit-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Image Upload Test</h1>
+    <p>This page tests the image upload functionality for task submissions.</p>
+    
+    <div class="upload-area" id="uploadArea">
+        <p>Drag and drop images here or click to select</p>
+        <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+    </div>
+    
+    <div class="image-preview" id="imagePreview"></div>
+    
+    <div>
+        <button class="submit-btn" id="submitBtn" disabled>Test Upload</button>
+        <button onclick="clearAll()">Clear All</button>
+    </div>
+    
+    <div class="log" id="log"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const submitBtn = document.getElementById('submitBtn');
+        const log = document.getElementById('log');
+        
+        let uploadedImages = [];
+        
+        function addLog(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            log.innerHTML += `[${timestamp}] ${message}<br>`;
+            log.scrollTop = log.scrollHeight;
+            console.log(message);
+        }
+        
+        function clearAll() {
+            uploadedImages = [];
+            imagePreview.innerHTML = '';
+            submitBtn.disabled = true;
+            addLog('Cleared all images');
+        }
+        
+        async function uploadImageToCloudinary(file) {
+            addLog(`Starting upload for: ${file.name}`);
+            
+            const formData = new FormData();
+            formData.append('images', file);
+            
+            try {
+                const response = await fetch(`${API_BASE}/submissions/upload-images`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+                
+                addLog(`Upload response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    addLog(`Upload failed: ${response.status} ${errorText}`);
+                    throw new Error(`Upload failed: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                addLog(`Upload successful: ${JSON.stringify(result)}`);
+                return result.images[0];
+            } catch (error) {
+                addLog(`Upload error: ${error.message}`);
+                throw error;
+            }
+        }
+        
+        async function handleFiles(files) {
+            const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+            addLog(`Processing ${imageFiles.length} image files`);
+            
+            for (const file of imageFiles) {
+                try {
+                    const uploadedImage = await uploadImageToCloudinary(file);
+                    uploadedImages.push({
+                        id: Date.now() + Math.random(),
+                        ...uploadedImage,
+                        status: 'completed'
+                    });
+                    
+                    displayImage(uploadedImage, file.name);
+                    addLog(`Image added: ${file.name}`);
+                } catch (error) {
+                    addLog(`Failed to upload ${file.name}: ${error.message}`);
+                }
+            }
+            
+            submitBtn.disabled = uploadedImages.length === 0;
+        }
+        
+        function displayImage(imageData, fileName) {
+            const imageItem = document.createElement('div');
+            imageItem.className = 'image-item';
+            
+            imageItem.innerHTML = `
+                <img src="${imageData.secureUrl}" alt="${fileName}">
+                <button class="remove-btn" onclick="removeImage('${imageData.publicId}')">×</button>
+            `;
+            
+            imagePreview.appendChild(imageItem);
+        }
+        
+        function removeImage(publicId) {
+            uploadedImages = uploadedImages.filter(img => img.publicId !== publicId);
+            const imageItem = event.target.closest('.image-item');
+            imageItem.remove();
+            submitBtn.disabled = uploadedImages.length === 0;
+            addLog(`Removed image: ${publicId}`);
+        }
+        
+        // Event listeners
+        uploadArea.addEventListener('click', () => fileInput.click());
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+        
+        submitBtn.addEventListener('click', async () => {
+            addLog(`Submitting ${uploadedImages.length} images...`);
+            addLog(`Images data: ${JSON.stringify(uploadedImages, null, 2)}`);
+            
+            // Here you would normally submit to the task submission endpoint
+            // For now, just log the data that would be sent
+            const submitData = {
+                taskId: 'test-task-id',
+                comment: 'Test submission with images',
+                collaborators: [],
+                images: uploadedImages.filter(img => img.status === 'completed')
+            };
+            
+            addLog(`Submit data: ${JSON.stringify(submitData, null, 2)}`);
+        });
+        
+        addLog('Image upload test page loaded');
+    </script>
+</body>
+</html>
