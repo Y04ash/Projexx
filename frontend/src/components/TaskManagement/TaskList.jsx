@@ -1,10 +1,109 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Award, FileText, Upload, Download, Eye, Edit, Trash2, Users, Server, Loader2, AlertCircle } from 'lucide-react';
+import { Calendar, Clock, Award, FileText, Upload, Download, Eye, Edit, Trash2, Users, Server, Loader2, AlertCircle, Star, MessageSquare } from 'lucide-react';
 import TaskCreator from './TaskCreator';
 import TaskSubmission from './TaskSubmission';
 import SubmissionViewer from './SubmissionViewer';
+import TeacherGradingModal from './TeacherGradingModal';
+import GradingResultsModal from './GradingResultsModal';
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
+
+// Utility function to safely extract ID from various formats
+const extractId = (idValue) => {
+  console.log('🔍 extractId called with:', idValue, 'type:', typeof idValue);
+  
+  if (!idValue) {
+    console.log('🔍 extractId returning null (no value)');
+    return null;
+  }
+  
+  // If it's already a string, return it
+  if (typeof idValue === 'string') {
+    console.log('🔍 extractId returning string:', idValue);
+    return idValue;
+  }
+  
+  // Handle Mongoose ObjectId instances specifically FIRST
+  // ObjectIds have a constructor name of 'ObjectId' and a toString method
+  if (idValue.constructor && idValue.constructor.name === 'ObjectId') {
+    const result = idValue.toString();
+    console.log('🔍 extractId found ObjectId, returning:', result);
+    return result;
+  }
+  
+  // Handle generic objects
+  if (typeof idValue === 'object' && idValue !== null) {
+    console.log('🔍 extractId processing object:', idValue);
+    
+    // Check if it has a valid toString method (not [object Object])
+    if (idValue.toString && typeof idValue.toString === 'function' && idValue.toString() !== '[object Object]') {
+      const stringValue = idValue.toString();
+      console.log('🔍 extractId toString result:', stringValue);
+      // Validate it's a proper ObjectId format (24 hex characters)
+      if (/^[0-9a-fA-F]{24}$/.test(stringValue)) {
+        console.log('🔍 extractId valid ObjectId string:', stringValue);
+        return stringValue;
+      }
+    }
+    
+    // Try common ID properties as fallback
+    const extractedId = idValue.id || idValue._id || idValue.valueOf?.();
+    console.log('🔍 extractId extracted from properties:', extractedId);
+    if (extractedId) {
+      // Recursively extract if the extracted value is also an object
+      return extractId(extractedId);
+    }
+    
+    console.log('🔍 extractId returning null (no valid ID found)');
+    return null;
+  }
+  
+  // Convert other types to string
+  const result = String(idValue);
+  console.log('🔍 extractId converting to string:', result);
+  return result;
+};
+
+// Function to validate and clean submission data
+const validateSubmissionData = (tasks) => {
+  console.log('🔍 validateSubmissionData called with tasks:', tasks);
+  
+  return tasks.map((task, taskIndex) => {
+    console.log(`🔍 Processing task ${taskIndex}:`, task.title);
+    
+    const cleanedSubmissions = task.submissions?.map((sub, subIndex) => {
+      console.log(`🔍 Processing submission ${subIndex} for task ${taskIndex}:`, sub);
+      console.log(`🔍 Submission ${subIndex} _id before cleaning:`, sub._id, 'type:', typeof sub._id);
+      
+      const cleanedId = extractId(sub._id);
+      console.log(`🔍 Submission ${subIndex} _id after cleaning:`, cleanedId);
+      
+      return {
+        ...sub,
+        _id: cleanedId,
+        id: cleanedId,
+        // Also clean any nested IDs
+        student: sub.student ? {
+          ...sub.student,
+          _id: extractId(sub.student._id),
+          id: extractId(sub.student._id)
+        } : sub.student,
+        task: sub.task ? {
+          ...sub.task,
+          _id: extractId(sub.task._id),
+          id: extractId(sub.task._id)
+        } : sub.task
+      };
+    }) || [];
+    
+    console.log(`🔍 Task ${taskIndex} cleaned submissions:`, cleanedSubmissions);
+    
+    return {
+      ...task,
+      submissions: cleanedSubmissions
+    };
+  });
+};
 
 const TaskList = ({ serverId, userRole, userId }) => {
   const [tasks, setTasks] = useState([]);
@@ -12,8 +111,12 @@ const TaskList = ({ serverId, userRole, userId }) => {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showSubmissions, setShowSubmissions] = useState(false);
   const [showTaskCreator, setShowTaskCreator] = useState(false);
+  const [showGradingModal, setShowGradingModal] = useState(false);
+  const [showGradingResults, setShowGradingResults] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [gradingInProgress, setGradingInProgress] = useState(false);
 
   useEffect(() => {
     fetchTasks();
@@ -46,7 +149,7 @@ const TaskList = ({ serverId, userRole, userId }) => {
       
       console.log('📡 Fetching from endpoint:', endpoint);
       
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${endpoint}?t=${Date.now()}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json',
@@ -59,12 +162,21 @@ const TaskList = ({ serverId, userRole, userId }) => {
       }
       
       const data = await response.json();
-      console.log('📊 Tasks response:', data);
+      console.log('📊 RAW fetchTasks response:', data);
+      console.log('🔍 First task submissions (RAW):', data.tasks?.[0]?.submissions);
+      console.log('🔍 First submission ID (RAW):', data.tasks?.[0]?.submissions?.[0]?._id);
+      console.log('🔍 First submission ID type (RAW):', typeof data.tasks?.[0]?.submissions?.[0]?._id);
       
       if (data.success) {
-        setTasks(data.tasks || []);
+        // Validate and clean all submission data to prevent ObjectId issues
+        const validatedTasks = validateSubmissionData(data.tasks || []);
+        console.log('🔍 AFTER validateSubmissionData:', validatedTasks);
+        console.log('🔍 First validated submission ID:', validatedTasks?.[0]?.submissions?.[0]?._id);
+        console.log('🔍 First validated submission ID type:', typeof validatedTasks?.[0]?.submissions?.[0]?._id);
+        
+        setTasks(validatedTasks);
         setRetryCount(0);
-        console.log(`✅ Successfully loaded ${data.tasks?.length || 0} tasks`);
+        console.log(`✅ Successfully loaded ${validatedTasks.length} tasks with validated submission data`);
       } else {
         throw new Error(data.message || 'Failed to fetch tasks');
       }
@@ -97,6 +209,47 @@ const TaskList = ({ serverId, userRole, userId }) => {
         ? { ...task, submissionStatus: 'submitted' }
         : task
     ));
+  };
+
+  const handleGradeSubmission = (submission) => {
+    // Prevent multiple grading operations
+    if (gradingInProgress) {
+      console.warn('⚠️ Grading already in progress, ignoring request');
+      return;
+    }
+    
+    // Validate submission has proper ID before proceeding
+    const submissionId = extractId(submission._id || submission.id);
+    if (!submissionId || submissionId === '[object Object]') {
+      console.error('❌ Invalid submission ID for grading:', submissionId, submission);
+      alert('Error: Invalid submission data. Please refresh the page and try again.');
+      return;
+    }
+    
+    setSelectedSubmission(submission);
+    setShowGradingModal(true);
+  };
+
+  const handleGradingComplete = (gradedSubmission) => {
+    console.log('✅ Grading completed:', gradedSubmission);
+    console.log('🔍 Graded submission ID:', gradedSubmission?._id || gradedSubmission?.id);
+    console.log('🔍 Graded submission type:', typeof gradedSubmission);
+    
+    // Close modal immediately
+    setShowGradingModal(false);
+    setSelectedSubmission(null);
+    setGradingInProgress(false);
+    
+    // Refresh tasks with proper error handling
+    fetchTasks().catch(error => {
+      console.error('❌ Error refreshing tasks after grading:', error);
+      // Don't show error to user, just log it
+    });
+  };
+
+  const handleViewGradingResults = (submission) => {
+    setSelectedSubmission(submission);
+    setShowGradingResults(true);
   };
 
   const deleteTask = async (taskId) => {
@@ -176,17 +329,6 @@ const TaskList = ({ serverId, userRole, userId }) => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">
-            {userRole === 'faculty' ? 'Task Management' : 'My Tasks'}
-          </h2>
-          <p className="text-gray-600 mt-1">
-            {userRole === 'faculty' 
-              ? 'Create and manage task assignments'
-              : 'View and submit your assigned tasks'
-            }
-          </p>
-        </div>
         
         {userRole === 'faculty' && (
           <button
@@ -281,6 +423,48 @@ const TaskList = ({ serverId, userRole, userId }) => {
                       </span>
                     )}
                     
+                    {/* Show grading status for students */}
+                    {userRole === 'student' && task.grade !== undefined && task.grade !== null && (
+                      <div className="flex items-center space-x-2">
+                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-600">
+                          <Star className="w-3 h-3 inline mr-1" />
+                          {task.grade}/{task.maxPoints} points
+                        </span>
+                        {task.feedback && (
+                          <button
+                            onClick={() => {
+                              // Create a submission-like object with task data for the grading results modal
+                              const submissionForResults = {
+                                grade: task.grade,
+                                feedback: task.feedback,
+                                status: task.status,
+                                gradedAt: task.gradedAt,
+                                gradedBy: task.gradedBy,
+                                student: {
+                                  firstName: 'Student', // This would need to be populated from actual submission data
+                                  lastName: 'Name'
+                                },
+                                task: {
+                                  _id: task._id,
+                                  title: task.title,
+                                  maxPoints: task.maxPoints,
+                                  status: task.status
+                                },
+                                comment: task.comment || '',
+                                images: task.images || [],
+                                submittedAt: task.submittedAt || new Date()
+                              };
+                              handleViewGradingResults(submissionForResults);
+                            }}
+                            className="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                            title="View Feedback"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    
                     {isOverdue(task.dueDate, task.status) && (
                       <span className="px-2 py-1 rounded-full text-xs font-medium text-red-600 bg-red-100">
                         Overdue
@@ -301,10 +485,15 @@ const TaskList = ({ serverId, userRole, userId }) => {
                       <span>{task.maxPoints} points</span>
                     </div>
                     
-                    {task.team && (
+                    {(task.team || (task.teams && task.teams.length > 0)) && (
                       <div className="flex items-center gap-1">
                         <Users className="h-4 w-4" />
-                        <span>{task.team.name}</span>
+                        <span>
+                          {task.teams && task.teams.length > 0 
+                            ? task.teams.map(team => team.name).join(', ')
+                            : task.team?.name || 'No team assigned'
+                          }
+                        </span>
                       </div>
                     )}
                     
@@ -356,6 +545,102 @@ const TaskList = ({ serverId, userRole, userId }) => {
                   
                   {userRole === 'faculty' && (
                     <>
+                      {/* Grade submission button - only show if there are submissions to grade */}
+                      {task.submissions && task.submissions.length > 0 && (
+                        <button
+                          onClick={() => {
+                            console.log('🔍 RAW task.submissions before processing:', task.submissions);
+                            console.log('🔍 Task ID:', task._id);
+                            console.log('🔍 Task title:', task.title);
+                            
+                            // Find the first ungraded submission or the most recent one
+                            const submissionToGrade = task.submissions.find(sub => !sub.grade) || task.submissions[0];
+                            console.log('🔍 Found submission to grade:', submissionToGrade);
+                            console.log('🔍 Submission ID type:', typeof submissionToGrade._id);
+                            console.log('🔍 Submission ID value:', submissionToGrade._id);
+                            console.log('🔍 Submission ID constructor:', submissionToGrade._id?.constructor?.name);
+                            console.log('🔍 Submission ID toString:', submissionToGrade._id?.toString?.());
+                            
+                            if (submissionToGrade) {
+                              // EMERGENCY: Force string conversion right here
+                              let rawId = submissionToGrade._id || submissionToGrade.id;
+                              console.log('🔍 Raw ID before processing:', rawId, 'type:', typeof rawId);
+                              
+                              // Check if it's the literal string "[object Object]"
+                              if (rawId === '[object Object]') {
+                                console.error('❌ CRITICAL: Found literal [object Object] string!');
+                                alert('Error: Corrupted submission data. Please refresh the page.');
+                                return;
+                              }
+                              
+                              // EMERGENCY: If it's an object, force toString() immediately
+                              if (typeof rawId === 'object' && rawId !== null) {
+                                console.warn('⚠️ EMERGENCY: Raw ID is object, forcing toString()');
+                                rawId = rawId.toString();
+                                console.log('🔍 After emergency toString():', rawId);
+                                
+                                // Check again for [object Object]
+                                if (rawId === '[object Object]') {
+                                  console.error('❌ CRITICAL: toString() returned [object Object]!');
+                                  alert('Error: Corrupted submission data. Please refresh the page.');
+                                  return;
+                                }
+                              }
+                              
+                              // Extract submission ID safely
+                              const submissionId = extractId(rawId);
+                              console.log('🔍 Final extracted submission ID:', submissionId);
+                              
+                              if (!submissionId || submissionId === 'undefined' || submissionId === 'null' || submissionId === '[object Object]') {
+                                console.error('❌ Invalid submission ID for grading:', submissionId, submissionToGrade);
+                                alert('Error: Invalid submission data. Please refresh the page and try again.');
+                                return;
+                              }
+                              
+                              // Validate ObjectId format
+                              if (!/^[0-9a-fA-F]{24}$/.test(submissionId)) {
+                                console.error('❌ Invalid ObjectId format:', submissionId);
+                                alert('Error: Invalid submission ID format. Please refresh the page and try again.');
+                                return;
+                              }
+                              
+                              // Create a clean submission object for grading
+                              const submissionWithTask = {
+                                id: submissionId,
+                                _id: submissionId, // Ensure both id and _id are set
+                                student: submissionToGrade.student,
+                                comment: submissionToGrade.comment || '',
+                                images: submissionToGrade.images || [],
+                                status: submissionToGrade.status || 'submitted',
+                                submittedAt: submissionToGrade.submittedAt,
+                                grade: submissionToGrade.grade,
+                                feedback: submissionToGrade.feedback,
+                                gradedAt: submissionToGrade.gradedAt,
+                                gradedBy: submissionToGrade.gradedBy,
+                                task: {
+                                  _id: task._id,
+                                  title: task.title,
+                                  maxPoints: task.maxPoints,
+                                  status: task.status
+                                }
+                              };
+                              
+                              console.log('🔍 Original submission:', submissionToGrade);
+                              console.log('🔍 Clean submission for grading:', submissionWithTask);
+                              console.log('🔍 Final submission ID:', submissionWithTask.id);
+                              
+                              // Set loading state to prevent multiple operations
+                              setGradingInProgress(true);
+                              handleGradeSubmission(submissionWithTask);
+                            }
+                          }}
+                          className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                          title="Grade Submission"
+                        >
+                          <Star className="h-4 w-4" />
+                        </button>
+                      )}
+                      
                       <button
                         onClick={() => {/* Handle edit */}}
                         className="p-2 text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
@@ -386,18 +671,28 @@ const TaskList = ({ serverId, userRole, userId }) => {
               </div>
               
               {/* Progress bar for faculty */}
-              {userRole === 'faculty' && task.team && (
+              {userRole === 'faculty' && (task.team || (task.teams && task.teams.length > 0)) && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
                   <div className="flex items-center justify-between text-sm text-gray-600 mb-1">
                     <span>Submissions</span>
-                    <span>{task.submissionCount || 0}/{task.team.members?.length || 0}</span>
+                    <span>
+                      {task.submissionCount || 0}/
+                      {task.teams && task.teams.length > 0 
+                        ? task.teams.reduce((total, team) => total + (team.members?.length || 0), 0)
+                        : task.team?.members?.length || 0
+                      }
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                       style={{ 
-                        width: `${task.team.members?.length ? 
-                          ((task.submissionCount || 0) / task.team.members.length) * 100 : 0}%` 
+                        width: `${(() => {
+                          const totalMembers = task.teams && task.teams.length > 0 
+                            ? task.teams.reduce((total, team) => total + (team.members?.length || 0), 0)
+                            : task.team?.members?.length || 0;
+                          return totalMembers ? ((task.submissionCount || 0) / totalMembers) * 100 : 0;
+                        })()}%`
                       }}
                     ></div>
                   </div>
@@ -496,6 +791,29 @@ const TaskList = ({ serverId, userRole, userId }) => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Teacher Grading Modal */}
+      {showGradingModal && selectedSubmission && (
+        <TeacherGradingModal
+          submission={selectedSubmission}
+          onClose={() => {
+            setShowGradingModal(false);
+            setSelectedSubmission(null);
+          }}
+          onGrade={handleGradingComplete}
+        />
+      )}
+
+      {/* Student Grading Results Modal */}
+      {showGradingResults && selectedSubmission && (
+        <GradingResultsModal
+          submission={selectedSubmission}
+          onClose={() => {
+            setShowGradingResults(false);
+            setSelectedSubmission(null);
+          }}
+        />
       )}
 
       {/* Retry Loading Indicator */}

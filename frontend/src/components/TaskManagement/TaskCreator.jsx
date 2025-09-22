@@ -71,7 +71,7 @@ const TaskCreator = ({ serverId, serverTitle, onTaskCreated, onClose }) => {
   
   // ✅ Constants - MEMOIZED
   const API_BASE = useMemo(() => 
-    process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_BASE || 'http://localhost:5000/api'
+    process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_BASE || 'http://localhost:5001/api'
   , []);
   
   const MAX_RETRY_ATTEMPTS = 3;
@@ -194,7 +194,7 @@ const TaskCreator = ({ serverId, serverTitle, onTaskCreated, onClose }) => {
     if (!serverId) return;
     
     try {
-      const response = await fetch(`${API_BASE}/projectServers/faculty-servers`, {
+      const response = await fetch(`${API_BASE}/servers/faculty-servers`, {
         credentials: 'include'
       });
       
@@ -233,9 +233,9 @@ const TaskCreator = ({ serverId, serverTitle, onTaskCreated, onClose }) => {
       setUiState(prev => ({ ...prev, networkStatus: 'online' }));
       
       const endpoints = [
-        `${API_BASE}/teamRoutes/server/${serverId}/teams`,
+        `${API_BASE}/teams/server/${serverId}/teams`,
         `${API_BASE}/tasks/server/${serverId}/teams`,
-        `${API_BASE}/teamRoutes/faculty-teams`
+        `${API_BASE}/teams/faculty-teams`
       ];
       
       let teams = [];
@@ -269,7 +269,7 @@ const TaskCreator = ({ serverId, serverTitle, onTaskCreated, onClose }) => {
             
             if (endpoint.includes('faculty-teams') && teams.length > 0) {
               try {
-                const serverResponse = await fetch(`${API_BASE}/projectServers/faculty-servers`, {
+                const serverResponse = await fetch(`${API_BASE}/servers/faculty-servers`, {
                   credentials: 'include'
                 });
                 

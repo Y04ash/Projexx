@@ -6,7 +6,7 @@ const JoinTeamButton = ({ team, onTeamJoined, disabled }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   const handleJoinTeam = async () => {
     if (!team?._id) {

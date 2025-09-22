@@ -208,7 +208,7 @@ const EnhancedFacultyDashboard = ({ user, onLogout }) => {
       setError(null);
       
       // Fetch servers with teams and stats - This is the main endpoint
-      const serversResponse = await fetch(`${API_BASE}/projectServers/faculty-servers`, {
+      const serversResponse = await fetch(`${API_BASE}/servers/faculty-servers`, {
         credentials: 'include'
       });
       
@@ -283,7 +283,7 @@ const EnhancedFacultyDashboard = ({ user, onLogout }) => {
 
       // Fetch calendar events from tasks (create our own calendar events)
       try {
-        const tasksResponse = await fetch(`${API_BASE}/tasks/faculty-tasks`, {
+        const tasksResponse = await fetch(`${API_BASE}/tasks/faculty`, {
           credentials: 'include'
         });
         
@@ -324,7 +324,7 @@ const EnhancedFacultyDashboard = ({ user, onLogout }) => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/projectServers/create`, {
+      const response = await fetch(`${API_BASE}/servers/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -361,7 +361,7 @@ const EnhancedFacultyDashboard = ({ user, onLogout }) => {
     }
 
     try {
-      const response = await fetch(`${API_BASE}/projectServers/${serverId}`, {
+      const response = await fetch(`${API_BASE}/servers/${serverId}`, {
         method: 'DELETE',
         credentials: 'include'
       });

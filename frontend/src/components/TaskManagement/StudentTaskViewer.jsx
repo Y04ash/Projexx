@@ -25,7 +25,7 @@ const StudentTaskViewer = ({ task, onClose, onResubmit }) => {
   const [loading, setLoading] = useState(true);
   const [showFeedback, setShowFeedback] = useState(false);
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   useEffect(() => {
     if (task) {

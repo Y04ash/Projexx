@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 function LandingPage() {
-  const { setCurrentView } = useContext(AuthContext);
+  const { setCurrentView, user } = useContext(AuthContext);
 
   const features = [
     {
@@ -90,18 +90,43 @@ function LandingPage() {
               <a href="#features" className="text-gray-600 hover:text-purple-600 transition-colors duration-200">Features</a>
               <a href="#about" className="text-gray-600 hover:text-purple-600 transition-colors duration-200">About</a>
               <a href="#testimonials" className="text-gray-600 hover:text-purple-600 transition-colors duration-200">Reviews</a>
-              <button
-                onClick={() => setCurrentView('login')}
-                className="text-gray-600 hover:text-purple-600 transition-colors duration-200"
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setCurrentView('register')}
-                className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-4 py-2 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
-              >
-                Get Started
-              </button>
+              {user ? (
+                <>
+                  <span className="text-gray-700 font-medium">
+                    Welcome, {user.firstName || user.name || 'User'}!
+                  </span>
+                  <button
+                    onClick={() => setCurrentView('dashboard')}
+                    className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-4 py-2 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
+                  >
+                    Go to Dashboard
+                  </button>
+                  <button
+                    onClick={() => {
+                      // Logout logic would go here
+                      window.location.reload();
+                    }}
+                    className="text-gray-600 hover:text-purple-600 transition-colors duration-200"
+                  >
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setCurrentView('login')}
+                    className="text-gray-600 hover:text-purple-600 transition-colors duration-200"
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => setCurrentView('register')}
+                    className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-4 py-2 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105"
+                  >
+                    Get Started
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -129,13 +154,23 @@ function LandingPage() {
               </div>
               
               <div className="flex flex-col sm:flex-row gap-4">
-                <button
-                  onClick={() => setCurrentView('register')}
-                  className="group bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-8 py-4 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2"
-                >
-                  <span className="font-semibold">Start Free Trial</span>
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200" />
-                </button>
+                {user ? (
+                  <button
+                    onClick={() => setCurrentView('dashboard')}
+                    className="group bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-8 py-4 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2"
+                  >
+                    <span className="font-semibold">Go to Dashboard</span>
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setCurrentView('register')}
+                    className="group bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-8 py-4 rounded-xl hover:from-purple-600 hover:to-indigo-700 transition-all duration-300 transform hover:scale-105 flex items-center justify-center space-x-2"
+                  >
+                    <span className="font-semibold">Start Free Trial</span>
+                    <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform duration-200" />
+                  </button>
+                )}
                 <button className="group border-2 border-gray-200 text-gray-700 px-8 py-4 rounded-xl hover:border-purple-300 hover:text-purple-600 transition-all duration-300 flex items-center justify-center space-x-2">
                   <Play className="w-5 h-5" />
                   <span className="font-semibold">Watch Demo</span>

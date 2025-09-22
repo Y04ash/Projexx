@@ -65,7 +65,7 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
   const [collaboratorInput, setCollaboratorInput] = useState('');
   
   // ✅ Constants
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
   const MAX_FILE_SIZE = task?.maxFileSize || 50 * 1024 * 1024; // 50MB default
   const MAX_FILES = 10;
   const ALLOWED_TYPES = task?.allowedFileTypes || ['pdf', 'doc', 'docx', 'txt', 'jpg', 'png', 'gif'];
@@ -370,9 +370,8 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
   // ✅ Individual file upload with retry mechanism
   const uploadSingleFile = useCallback(async (fileObj) => {
     const formData = new FormData();
-    formData.append('files', fileObj.file);
-    formData.append('taskId', task._id);
-    
+    formData.append('images', fileObj.file); // Use 'images' to match backend
+
     try {
       setSubmissionData(prev => ({
         ...prev,
@@ -381,71 +380,67 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         )
       }));
 
-      const xhr = new XMLHttpRequest();
-      
-      // Progress tracking
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const percentComplete = Math.round((e.loaded / e.total) * 100);
-          setUploadProgress(prev => ({ ...prev, [fileObj.id]: percentComplete }));
-        }
+      const response = await fetch(`${API_BASE}/submissions/upload-images`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
       });
 
-      // Promise wrapper for XMLHttpRequest
-      const uploadPromise = new Promise((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            try {
-              const response = JSON.parse(xhr.responseText);
-              resolve(response);
-            } catch (e) {
-              reject(new Error('Invalid response format'));
-            }
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        };
-        
-        xhr.onerror = () => reject(new Error('Network error during upload'));
-        xhr.ontimeout = () => reject(new Error('Upload timeout'));
-        
-        xhr.open('POST', `${API_BASE}/files/upload-single`, true);
-        xhr.withCredentials = true;
-        xhr.timeout = 5 * 60 * 1000; // 5 minutes
-        xhr.send(formData);
-      });
+      if (!response.ok) {
+        throw new Error(`Upload failed with status ${response.status}`);
+      }
 
-      const result = await uploadPromise;
+      const result = await response.json();
+      console.log('📤 Upload response:', result);
       
-      // Update file status on success
-      setSubmissionData(prev => ({
-        ...prev,
-        files: prev.files.map(f => 
-          f.id === fileObj.id ? { 
-            ...f, 
-            status: 'completed',
-            uploadedAt: new Date().toISOString(),
-            serverResponse: result
-          } : f
-        )
-      }));
-      
-      return result;
-      
-    } catch (error) {
-      console.error(`❌ Upload failed for ${fileObj.name}:`, error);
-      
-      // Handle retry logic
-      const newRetryCount = fileObj.retryCount + 1;
-      
-      if (newRetryCount < MAX_RETRY_ATTEMPTS) {
-        // Schedule retry
+      if (result.success && result.images && result.images.length > 0) {
+        // Get the Cloudinary response data
+        const cloudinaryData = result.images[0]; // First uploaded image
+        console.log('📤 Cloudinary data received:', cloudinaryData);
+        
+        // Update file status with complete Cloudinary data
         setSubmissionData(prev => ({
           ...prev,
           files: prev.files.map(f => 
             f.id === fileObj.id ? { 
               ...f, 
-              status: 'retrying',
+              status: 'completed',
+              uploadedAt: new Date().toISOString(),
+              // Store the complete Cloudinary response
+              cloudinaryData: {
+                publicId: cloudinaryData.publicId,
+                url: cloudinaryData.url,
+                secureUrl: cloudinaryData.secureUrl,
+                originalName: cloudinaryData.originalName,
+                size: cloudinaryData.size,
+                format: cloudinaryData.format,
+                uploadedAt: cloudinaryData.uploadedAt
+              }
+            } : f
+          )
+        }));
+        
+        return result;
+      } else {
+        throw new Error('Invalid upload response');
+      }
+      
+    } catch (error) {
+      console.error(`❌ Upload failed for ${fileObj.name}:`, error);
+      
+      // Handle retry logic
+      const newRetryCount = (fileObj.retryCount || 0) + 1;
+      const maxRetries = 3;
+      
+      if (newRetryCount <= maxRetries) {
+        console.log(`🔄 Retrying upload for ${fileObj.name} (attempt ${newRetryCount}/${maxRetries})`);
+        
+        setSubmissionData(prev => ({
+          ...prev,
+          files: prev.files.map(f => 
+            f.id === fileObj.id ? { 
+              ...f, 
+              status: 'pending',
               retryCount: newRetryCount,
               lastError: error.message
             } : f
@@ -474,29 +469,41 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
       
       throw error;
     }
-  }, [task, API_BASE]);
+  }, [API_BASE]);
 
   // ✅ Main submission handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('🚀 Form submission started');
+    console.log('🚀 Current files:', submissionData.files);
     
     if (!validateForm()) {
+      console.log('❌ Form validation failed');
       return;
     }
     
+    console.log('✅ Form validation passed');
     setUiState(prev => ({ ...prev, loading: true }));
     
     try {
       // Upload all pending files first
       const pendingFiles = submissionData.files.filter(f => f.status === 'pending');
+      console.log('📤 Pending files to upload:', pendingFiles.length);
       
       if (pendingFiles.length > 0) {
+        console.log('📤 Starting file upload process...');
         setUiState(prev => ({ ...prev, uploading: true }));
         
-        const uploadPromises = pendingFiles.map(file => uploadSingleFile(file));
+        const uploadPromises = pendingFiles.map(file => {
+          console.log('📤 Uploading file:', file.name);
+          return uploadSingleFile(file);
+        });
         await Promise.allSettled(uploadPromises);
         
+        console.log('📤 File upload process completed');
         setUiState(prev => ({ ...prev, uploading: false }));
+      } else {
+        console.log('📤 No files to upload');
       }
       
       // Check if all uploads succeeded
@@ -505,22 +512,36 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         throw new Error(`${failedFiles.length} file(s) failed to upload. Please retry or remove them.`);
       }
       
-      // Submit the task
+      // Prepare images data with correct format for backend
+      const imagesForSubmission = submissionData.files
+        .filter(f => f.status === 'completed' && f.cloudinaryData)
+        .map(f => {
+          console.log('🖼️ Processing file for submission:', f);
+          console.log('🖼️ Cloudinary data:', f.cloudinaryData);
+          return {
+            publicId: f.cloudinaryData.publicId,
+            url: f.cloudinaryData.url,
+            secureUrl: f.cloudinaryData.secureUrl,
+            originalName: f.cloudinaryData.originalName,
+            size: f.cloudinaryData.size,
+            format: f.cloudinaryData.format,
+            uploadedAt: f.cloudinaryData.uploadedAt
+          };
+        });
+      
+      console.log('🖼️ Images for submission:', imagesForSubmission);
+      
+      // Submit the task with properly formatted data
       const submissionPayload = {
+        taskId: task._id,
         comment: submissionData.comment.trim(),
-        collaborators: submissionData.collaborators,
-        files: submissionData.files
-          .filter(f => f.status === 'completed')
-          .map(f => ({
-            id: f.id,
-            name: f.name,
-            size: f.size,
-            type: f.type,
-            serverResponse: f.serverResponse
-          }))
+        collaborators: submissionData.collaborators.filter(email => email.trim()),
+        images: imagesForSubmission // This now has all required fields
       };
       
-      const response = await fetch(`${API_BASE}/files/upload/${task._id}`, {
+      console.log('🚀 Submitting with payload:', submissionPayload);
+      
+      const response = await fetch(`${API_BASE}/submissions/submit`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -584,7 +605,7 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
   };
 
   // ✅ Render components
-  const SubmissionHeader = () => (
+  const SubmissionHeader = useCallback(() => (
     <div className="flex items-center justify-between p-6 border-b border-gray-200 bg-white sticky top-0 z-10">
       <div className="flex items-center space-x-4">
         <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -620,9 +641,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         </button>
       </div>
     </div>
-  );
+  ), [task?.title, task?.dueDate, existingSubmission, onClose]);
 
-  const TaskInfo = () => (
+  const TaskInfo = useCallback(() => (
     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="flex items-center space-x-2">
@@ -653,9 +674,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         </div>
       )}
     </div>
-  );
+  ), [task?.maxPoints, task?.dueDate, task?.maxAttempts, task?.description]);
 
-  const FileUploadArea = () => (
+  const FileUploadArea = useCallback(() => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-gray-900">File Attachments</h3>
@@ -801,9 +822,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         </div>
       )}
     </div>
-  );
+  ), [submissionData.files.length, uiState.dragActive, uploadProgress, handleDragEnter, handleDragLeave, handleDragOver, handleDrop, handleFileInputChange, getFileIcon, formatFileSize]);
 
-  const CollaboratorSection = () => (
+  const CollaboratorSection = useCallback(() => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-medium text-gray-900">Collaborators</h3>
@@ -862,9 +883,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         </div>
       )}
     </div>
-  );
+  ), [uiState.showCollaborators, collaboratorInput, validation.errors.collaborator, submissionData.collaborators, addCollaborator, removeCollaborator]);
 
-  const CommentSection = () => (
+  const CommentSection = useCallback(() => (
     <div className="space-y-4">
       <label className="block text-lg font-medium text-gray-900">
         Submission Comment *
@@ -887,9 +908,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         <span>{submissionData.comment.length}/1000</span>
       </div>
     </div>
-  );
+  ), [submissionData.comment, validation.errors.comment, uiState.loading]);
 
-  const ErrorDisplay = () => {
+  const ErrorDisplay = useCallback(() => {
     const hasErrors = Object.keys(validation.errors).length > 0;
     const hasWarnings = validation.warnings.length > 0;
     
@@ -932,9 +953,9 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
         )}
       </div>
     );
-  };
+  }, [validation.errors, validation.warnings]);
 
-  const SubmissionFooter = () => {
+  const SubmissionFooter = useCallback(() => {
     const hasCompletedFiles = submissionData.files.some(f => f.status === 'completed');
     const hasFailedFiles = submissionData.files.some(f => f.status === 'failed');
     const hasUploadingFiles = submissionData.files.some(f => f.status === 'uploading' || f.status === 'retrying');
@@ -993,16 +1014,16 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
                 <span>Submitting...</span>
               </>
             ) : (
-              < >
+              <>
                 <Send className="w-4 h-4" />
-                <span onClick={onSubmitted}>Submit Assignment</span>
+                <span>Submit Assignment</span>
               </>
             )}
           </button>
         </div>
       </div>
     );
-  };
+  }, [submissionData.files, existingSubmission, uiState.loading, validation.errors, onClose, uploadSingleFile, onSubmitted]);
 
   // ✅ Main render
   return (
@@ -1021,11 +1042,39 @@ const TaskSubmission = ({ task, onClose, onSubmitted }) => {
               {task?.allowFileUpload && <FileUploadArea />}
               
               <CollaboratorSection />
+              
+              {/* Submit Button */}
+              <div className="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={uiState.loading}
+                >
+                  Cancel
+                </button>
+                
+                <button
+                  type="submit"
+                  disabled={uiState.loading || Object.keys(validation.errors).length > 0}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center space-x-2"
+                >
+                  {uiState.loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submitting...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Submit Assignment</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </div>
-        
-        <SubmissionFooter />
       </div>
     </div>
   );

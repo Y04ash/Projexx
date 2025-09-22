@@ -28,7 +28,7 @@ const ComprehensiveAnalyticsDashboard = ({ selectedServer, user }) => {
   const [showCreateTodo, setShowCreateTodo] = useState(false);
   const [newTodo, setNewTodo] = useState({ title: '', description: '', priority: 'medium', dueDate: '' });
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   useEffect(() => {
     if (selectedServer) {
@@ -61,7 +61,7 @@ const ComprehensiveAnalyticsDashboard = ({ selectedServer, user }) => {
       }
 
       // Fetch teams
-      const teamsResponse = await fetch(`${API_BASE}/teamRoutes/server/${selectedServer._id}/teams`, {
+      const teamsResponse = await fetch(`${API_BASE}/teams/server/${selectedServer._id}/teams`, {
         credentials: 'include'
       });
       
@@ -156,7 +156,10 @@ const ComprehensiveAnalyticsDashboard = ({ selectedServer, user }) => {
 
   const getTeamPerformance = () => {
     return teams.map(team => {
-      const teamTasks = tasks.filter(task => task.team?._id === team._id);
+      const teamTasks = tasks.filter(task => 
+        task.team?._id === team._id || 
+        (task.teams && task.teams.some(t => t._id === team._id))
+      );
       const completedTasks = teamTasks.filter(task => 
         kanbanData.completed.some(completed => completed._id === task._id)
       ).length;

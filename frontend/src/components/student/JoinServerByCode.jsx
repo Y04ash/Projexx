@@ -7,7 +7,7 @@ const JoinServerByCode = ({ onServerJoined, onClose }) => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   const handleJoinServer = async (e) => {
     e.preventDefault();
@@ -24,7 +24,7 @@ const JoinServerByCode = ({ onServerJoined, onClose }) => {
     try {
       console.log('🚀 Attempting to join server with code:', serverCode);
 
-      const response = await fetch(`${API_BASE}/projectServers/join`, {
+      const response = await fetch(`${API_BASE}/servers/join`, {
         method: 'POST',
         credentials: 'include',
         headers: {

@@ -26,7 +26,19 @@ function LoginPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setUser({ ...data[userType], role: userType });
+        const userData = { ...data[userType], role: userType };
+        
+        // Store user data and token in localStorage for persistence
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('userRole', userType);
+        localStorage.setItem('isAuthenticated', 'true');
+        
+        // Also store the token if it's provided in the response
+        if (data.token) {
+          localStorage.setItem('authToken', data.token);
+        }
+        
+        setUser(userData);
         setCurrentView('dashboard');
       } else {
         setError(data.message);

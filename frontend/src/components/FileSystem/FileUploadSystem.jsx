@@ -29,7 +29,7 @@ const FileUploadSystem = ({
   const [fileVersions, setFileVersions] = useState({});
 
   const fileInputRef = useRef(null);
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   const fileTypeIcons = {
     'image': Image,

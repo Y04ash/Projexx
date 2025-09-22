@@ -8,14 +8,14 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
     description: '',
     maxMembers: 4,
     studentEmails: [],
-    projectServer: ''  // <- selected server code
+    serverCode: ''  // <- server code input
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const [emailInput, setEmailInput] = useState('');
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   const handleAddEmail = () => {
     if (emailInput.trim() && !formData.studentEmails.includes(emailInput.trim())) {
@@ -37,8 +37,8 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.name.trim() || !formData.projectServer) {
-      setError('Team name and project server are required');
+    if (!formData.name.trim() || !formData.serverCode.trim()) {
+      setError('Team name and server code are required');
       return;
     }
 
@@ -51,7 +51,7 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
     setError('');
 
     try {
-      const response = await fetch(`${API_BASE}/teamRoutes/createTeam`, {
+      const response = await fetch(`${API_BASE}/teams/createTeam`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -61,7 +61,7 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
           name: formData.name.trim(),
           description: formData.description.trim(),
           maxMembers: formData.maxMembers,
-          projectServer: formData.projectServer,
+          projectServer: formData.serverCode.trim(),
           studentEmails: formData.studentEmails
         })
       });
@@ -98,25 +98,23 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
 
         <form onSubmit={handleSubmit}>
 
-          {/* Project Server Selection */}
+          {/* Server Code Input */}
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2">
-              Select Project Server *
+              Project Server Code *
             </label>
-            <select
-              value={formData.projectServer}
-              onChange={(e) => setFormData({ ...formData, projectServer: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+            <input
+              type="text"
+              value={formData.serverCode}
+              onChange={(e) => setFormData({ ...formData, serverCode: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Enter the server code provided by your teacher"
               required
               disabled={loading}
-            >
-              <option value="">-- Select Server --</option>
-              {userServers.map(server => (
-                <option key={server._id} value={server.code}>
-                  {server.title}
-                </option>
-              ))}
-            </select>
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Ask your teacher for the server code to join their project
+            </p>
           </div>
 
           {/* Team Name */}
@@ -172,6 +170,9 @@ const TeamCreator = ({ userServers, onTeamCreated, onClose }) => {
             <label className="block text-sm font-medium mb-2">
               Member Emails *
             </label>
+            <p className="text-xs text-gray-500 mb-2">
+              You will be automatically added as a team member. Add other members below.
+            </p>
             <div className="flex mb-2">
               <input
                 type="email"

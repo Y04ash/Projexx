@@ -31,7 +31,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { AuthContext } from '../App';
-import TaskSubmission from './TaskManagement/TaskSubmission';
+import ComprehensiveTaskSubmission from './TaskManagement/ComprehensiveTaskSubmission';
 import StudentTaskViewer from './TaskManagement/StudentTaskViewer';
 import StudentAnalyticsDashboard from './Analytics/StudentAnalyticsDashboard';
 import { API_BASE } from '../App';
@@ -54,6 +54,19 @@ const StudentDashboard = ({onLogout}) => {
   const [selectedTask, setSelectedTask] = useState(null);
   const [showTaskSubmission, setShowTaskSubmission] = useState(false);
   const [showTaskViewer, setShowTaskViewer] = useState(false);
+  
+  // Debug state changes
+  useEffect(() => {
+    console.log('🔄 showTaskSubmission changed to:', showTaskSubmission);
+  }, [showTaskSubmission]);
+  
+  useEffect(() => {
+    console.log('🔄 selectedTask changed to:', selectedTask);
+  }, [selectedTask]);
+  
+  useEffect(() => {
+    console.log('🔄 showTaskViewer changed to:', showTaskViewer);
+  }, [showTaskViewer]);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [notifications, setNotifications] = useState([]);
@@ -99,7 +112,7 @@ const[serverId,setServerId]=useState(null)
   // ✅ Enhanced Server Fetching
   const fetchServers = async () => {
     try {
-      const response = await fetch(`${API_BASE}/projectServers/student-servers`, {
+      const response = await fetch(`${API_BASE}/servers/student-servers`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -121,7 +134,7 @@ const[serverId,setServerId]=useState(null)
   // ✅ Enhanced Team Fetching
   const fetchTeams = async () => {
     try {
-      const response = await fetch(`${API_BASE}/teamRoutes/student-teams`, {
+      const response = await fetch(`${API_BASE}/teams/student-teams`, {
         credentials: 'include'
       });
       const data = await response.json();
@@ -246,12 +259,25 @@ const[serverId,setServerId]=useState(null)
 
   // ✅ Task Handlers
   const handleTaskClick = (task) => {
+    console.log('🎯 handleTaskClick called with task:', task);
+    console.log('📋 Task details:', {
+      id: task._id,
+      title: task.title,
+      submissions: task.submissions,
+      user: user.id
+    });
+    
     setSelectedTask(task);
+    console.log('📊 selectedTask set to:', task);
+    
     const hasSubmission = task.submissions?.some(sub => sub.student === user.id);
+    console.log('🔍 hasSubmission:', hasSubmission);
     
     if (hasSubmission) {
+      console.log('✅ Task has submission, showing viewer');
       setShowTaskViewer(true);
     } else {
+      console.log('✅ Task has no submission, showing submission form');
       setShowTaskSubmission(true);
     }
   };
@@ -1019,7 +1045,7 @@ const[serverId,setServerId]=useState(null)
 
       {/* Modals */}
       {showTaskSubmission && selectedTask && (
-        <TaskSubmission
+        <ComprehensiveTaskSubmission
           task={selectedTask}
           onClose={() => {
             setShowTaskSubmission(false);

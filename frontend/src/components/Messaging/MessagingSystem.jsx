@@ -661,9 +661,9 @@ function NewChatModal({ userRole, onClose, onChatCreated }) {
   try {
     // Try multiple endpoints until one works
     const endpoints = [
-      `${API_BASE}/teamRoutes/server/${serverId}/teams`,
+      `${API_BASE}/teams/server/${serverId}/teams`,
       `${API_BASE}/tasks/server/${serverId}/teams`,
-      `${API_BASE}/teamRoutes/faculty-teams`
+      `${API_BASE}/teams/faculty-teams`
     ];
     
     let teamsData = [];
@@ -690,7 +690,7 @@ function NewChatModal({ userRole, onClose, onChatCreated }) {
           // Filter teams for current server if needed
           if (endpoint.includes('faculty-teams')) {
             // Get server code first
-            const serverResponse = await fetch(`${API_BASE}/projectServers/${serverId}`, {
+            const serverResponse = await fetch(`${API_BASE}/servers/${serverId}`, {
               credentials: 'include'
             });
             const serverData = await serverResponse.json();

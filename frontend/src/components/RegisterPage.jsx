@@ -43,7 +43,7 @@ function RegisterPage() {
     try {
       // ✅ Use the correct backend endpoints that actually exist
       const endpoint = userType === 'faculty' 
-        ? 'faculty/createFaculty'  // This endpoint exists in your backend
+        ? 'faculty/register'  // This endpoint exists in your backend
         : 'student/register';       // This endpoint exists in your backend
       
       console.log(`Calling endpoint: ${API_BASE}/${endpoint}`); // Debug log

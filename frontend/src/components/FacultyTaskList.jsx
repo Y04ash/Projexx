@@ -19,6 +19,7 @@ import {
   X
 } from 'lucide-react';
 import TaskCreator from './TaskManagement/TaskCreator';
+import SubmissionViewer from './faculty/SubmissionViewer';
 
 const FacultyTaskList = ({ serverId, serverTitle }) => {
   const [tasks, setTasks] = useState([]);
@@ -28,6 +29,8 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
   const [showSubmissions, setShowSubmissions] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState(null);
+  const [showSubmissionViewer, setShowSubmissionViewer] = useState(false);
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
@@ -36,7 +39,7 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
   const [error, setError] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
   useEffect(() => {
     if (serverId) {
@@ -58,7 +61,7 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
         
       console.log('📡 Fetching tasks from:', endpoint); 
       
-      const response = await fetch(endpoint, {
+      const response = await fetch(`${endpoint}?t=${Date.now()}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json',
@@ -108,6 +111,11 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
       if (data.success) {
         setSubmissions(data.submissions || []);
         console.log(`✅ Loaded ${data.submissions?.length || 0} submissions`);
+        console.log('📥 Submissions data:', data.submissions);
+        if (data.submissions && data.submissions.length > 0) {
+          console.log('📥 First submission details:', data.submissions[0]);
+          console.log('📥 First submission images:', data.submissions[0]?.images);
+        }
       } else {
         console.error('Failed to fetch submissions:', data.message);
         setSubmissions([]);
@@ -158,6 +166,38 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
     setSelectedTask(task);
     setShowSubmissions(true);
     fetchSubmissions(task._id);
+  };
+
+  const handleViewSubmission = (submission) => {
+    console.log('👁️ Viewing submission:', submission);
+    console.log('👁️ Submission images:', submission?.images);
+    console.log('👁️ Submission files:', submission?.files);
+    setSelectedSubmission(submission);
+    setShowSubmissionViewer(true);
+  };
+
+  const handleGradeSubmission = async (submissionId, gradeData) => {
+    try {
+      const response = await fetch(`${API_BASE}/submissions/${submissionId}/grade`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gradeData),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to grade submission');
+      }
+
+      // Refresh submissions
+      if (selectedTask) {
+        fetchSubmissions(selectedTask._id);
+      }
+    } catch (error) {
+      console.error('Error grading submission:', error);
+    }
   };
 
   const formatDate = (dateString) => {
@@ -217,14 +257,6 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">
-            Tasks {serverTitle && `- ${serverTitle}`}
-          </h2>
-          <p className="text-gray-600 mt-1">
-            Manage and monitor task assignments
-          </p>
-        </div>
         
         {/* <button
           onClick={() => setShowTaskCreator(true)}
@@ -388,7 +420,12 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
                     </div>
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4" />
-                      <span>{task.team?.name || 'No team assigned'}</span>
+                      <span>
+                        {task.teams && task.teams.length > 0 
+                          ? task.teams.map(team => team.name).join(', ')
+                          : task.team?.name || 'No team assigned'
+                        }
+                      </span>
                     </div>
                     {task.server && (
                       <div className="flex items-center gap-1">
@@ -482,23 +519,83 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  {submissions.map(submission => (
-                    <div key={submission._id} className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="font-medium text-gray-900">
-                          {submission.student?.firstName} {submission.student?.lastName}
+                  {submissions.map((submission, index) => (
+                    <div key={submission?._id || index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span className="text-white font-medium text-sm">
+                              {submission.student?.firstName?.[0] || 'U'}{submission.student?.lastName?.[0] || 'S'}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">
+                              {submission.student?.firstName || 'Unknown'} {submission.student?.lastName || 'Student'}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {submission.student?.email || 'No email'}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-500">
-                          {formatDate(submission.submittedAt)}
+                        <div className="flex items-center space-x-2">
+                          <div className="text-right">
+                            <div className="text-sm text-gray-500">
+                              {submission.submittedAt ? formatDate(submission.submittedAt) : 'Unknown date'}
+                            </div>
+                            {submission.grade !== undefined ? (
+                              <div className="text-sm font-medium text-green-600">
+                                Grade: {submission.grade}/{selectedTask.maxPoints}
+                              </div>
+                            ) : (
+                              <div className="text-sm text-orange-600">
+                                Not graded
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleViewSubmission(submission)}
+                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="View Submission"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
-                      <p className="text-gray-600 text-sm">{submission.submissionText}</p>
-                      {submission.grade !== undefined && (
-                        <div className="mt-2 text-sm">
-                          <span className="font-medium">Grade: </span>
-                          <span className="text-green-600">{submission.grade}/{selectedTask.maxPoints}</span>
+                      
+                      {/* Submission Preview */}
+                      <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                        <p className="text-gray-700 text-sm line-clamp-2">
+                          {submission?.comment || submission?.submissionText || 'No comment provided'}
+                        </p>
+                      </div>
+
+                      {/* File Attachments Preview */}
+                      {(submission.images?.length > 0 || submission.files?.length > 0) && (
+                        <div className="flex items-center space-x-2 text-sm text-gray-500">
+                          <FileText className="w-4 h-4" />
+                          <span>
+                            {submission.images?.length || 0} image(s), {submission.files?.length || 0} file(s)
+                          </span>
                         </div>
                       )}
+
+                      {/* Status Badge */}
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          {submission.grade !== undefined ? (
+                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+                              Graded
+                            </span>
+                          ) : (
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-medium">
+                              Pending Review
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          ID: {submission._id ? submission._id.slice(-8) : 'N/A'}
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -516,6 +613,19 @@ const FacultyTaskList = ({ serverId, serverTitle }) => {
             <span>Retrying... ({retryCount}/3)</span>
           </div>
         </div>
+      )}
+
+      {/* Submission Viewer Modal */}
+      {showSubmissionViewer && selectedSubmission && selectedTask && (
+        <SubmissionViewer
+          task={selectedTask}
+          submission={selectedSubmission}
+          onClose={() => {
+            setShowSubmissionViewer(false);
+            setSelectedSubmission(null);
+          }}
+          onGrade={handleGradeSubmission}
+        />
       )}
     </div>
   );

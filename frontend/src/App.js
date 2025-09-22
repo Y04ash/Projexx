@@ -6,7 +6,7 @@ import StudentDashboard from './components/StudentDashboard';
 import FacultyDashboard from './components/FacultyDashboard';
 
 export const AuthContext = createContext();
-export const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000/api';
+export const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5001/api';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -15,12 +15,67 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check authentication status on app load
     checkAuthStatus();
   }, []);
+
+  // Save current view to localStorage whenever it changes
+  useEffect(() => {
+    if (currentView !== 'landing') {
+      localStorage.setItem('currentView', currentView);
+    }
+  }, [currentView]);
 
   const checkAuthStatus = async () => {
     try {
       console.log('🔍 Checking authentication status...');
+      
+      // First check localStorage for stored authentication
+      const storedUser = localStorage.getItem('user');
+      const storedRole = localStorage.getItem('userRole');
+      const isAuthenticated = localStorage.getItem('isAuthenticated');
+      
+      if (storedUser && storedRole && isAuthenticated === 'true') {
+        console.log('🔍 Found stored authentication in localStorage');
+        
+        try {
+          const userData = JSON.parse(storedUser);
+          
+          // Verify the stored authentication with backend
+          const endpoint = storedRole === 'faculty' ? 'faculty' : 'student';
+          const response = await fetch(`${API_BASE}/${endpoint}/dashboard`, {
+            credentials: 'include'
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log(`✅ ${storedRole} authentication verified successfully`);
+            
+            // Update user data with fresh data from backend
+            // For faculty, extract the faculty object from the response
+            const freshUserData = storedRole === 'faculty' 
+              ? { ...data.faculty, role: storedRole, stats: data.stats }
+              : { ...data, role: storedRole };
+            setUser(freshUserData);
+            setUserType(storedRole);
+            
+            // Restore saved view or default to dashboard
+            const savedView = localStorage.getItem('currentView') || 'dashboard';
+            setCurrentView(savedView);
+            setLoading(false);
+            return;
+          } else {
+            console.log('❌ Stored authentication invalid, clearing localStorage');
+            clearStoredAuth();
+          }
+        } catch (parseError) {
+          console.log('❌ Error parsing stored user data:', parseError);
+          clearStoredAuth();
+        }
+      }
+      
+      // Fallback: Check cookie-based authentication
+      console.log('🔍 Checking cookie-based authentication...');
       
       // Check faculty authentication first
       const facultyResponse = await fetch(`${API_BASE}/faculty/dashboard`, {
@@ -29,10 +84,22 @@ function App() {
       
       if (facultyResponse.ok) {
         const data = await facultyResponse.json();
-        console.log('✅ Faculty authentication successful');
-        setUser({ ...data, role: 'faculty' });
-        setCurrentView('dashboard');
+        console.log('✅ Faculty cookie authentication successful');
+        
+        // Extract faculty data from nested object
+        const userData = { ...data.faculty, role: 'faculty', stats: data.stats };
+        
+        // Store in localStorage for future persistence
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('userRole', 'faculty');
+        localStorage.setItem('isAuthenticated', 'true');
+        
+        setUser(userData);
         setUserType('faculty');
+        
+        // Restore saved view or default to dashboard
+        const savedView = localStorage.getItem('currentView') || 'dashboard';
+        setCurrentView(savedView);
         setLoading(false);
         return;
       }
@@ -44,21 +111,46 @@ function App() {
       
       if (studentResponse.ok) {
         const data = await studentResponse.json();
-        console.log('✅ Student authentication successful');
-        setUser({ ...data, role: 'student' });
-        setCurrentView('dashboard');
+        console.log('✅ Student cookie authentication successful');
+        
+        const userData = { ...data, role: 'student' };
+        
+        // Store in localStorage for future persistence
+        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('userRole', 'student');
+        localStorage.setItem('isAuthenticated', 'true');
+        
+        setUser(userData);
         setUserType('student');
+        
+        // Restore saved view or default to dashboard
+        const savedView = localStorage.getItem('currentView') || 'dashboard';
+        setCurrentView(savedView);
         setLoading(false);
         return;
       }
       
       // No active session
       console.log('ℹ️ No active session found');
+      clearStoredAuth();
+      setUser(null);
+      setCurrentView('landing');
       setLoading(false);
     } catch (error) {
       console.log('❌ Authentication check failed:', error);
+      clearStoredAuth();
+      setUser(null);
+      setCurrentView('landing');
       setLoading(false);
     }
+  };
+
+  const clearStoredAuth = () => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('userRole');
+    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentView');
   };
 
   const handleLogout = async () => {
@@ -89,13 +181,12 @@ function App() {
       setUserType('student');
       
       // Clear localStorage
-      localStorage.removeItem('authToken');
-      localStorage.removeItem('user');
-      localStorage.removeItem('userRole');
+      clearStoredAuth();
       
       // Clear cookies
       document.cookie = 'authToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       document.cookie = 'refreshToken=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+      document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
       
       console.log('✅ User logged out successfully');
     }
@@ -104,6 +195,12 @@ function App() {
   // Handle successful login
   const handleLogin = (userData) => {
     console.log('✅ Login successful:', userData);
+    
+    // Store in localStorage for persistence
+    localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('userRole', userData.role);
+    localStorage.setItem('isAuthenticated', 'true');
+    
     setUser(userData);
     setCurrentView('dashboard');
     setUserType(userData.role);

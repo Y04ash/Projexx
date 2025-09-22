@@ -49,7 +49,7 @@ function CalendarView({ userRole, userId }) {
 
       // Load tasks with due dates
       const tasksResponse = await fetch(
-        `${API_BASE}/tasks/${userRole === 'faculty' ? 'faculty-tasks' : 'student-tasks'}`,
+        `${API_BASE}/tasks/${userRole === 'faculty' ? 'faculty' : 'student-tasks'}`,
         { credentials: 'include' }
       );
       
